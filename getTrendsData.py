@@ -8,13 +8,13 @@ def fetch_google_trends_data(keyword, trading_dates):
     file_name = f"{keyword}_trends.csv"
 
     # Define the folder path
-    folder_path = os.path.expanduser('./')
+    folder_path = os.path.expanduser('./trends_data')
 
     # Combine the folder path and file name to get the full file path
     file_path = os.path.join(folder_path, file_name)
 
     # Load the CSV file, skipping the first three rows, and specifying the delimiter as ';'
-    trendsData = pd.read_csv(f'./{file_name}', skiprows=3, delimiter=';', names=['Dag', 'Interest'], parse_dates=['Dag'])
+    trendsData = pd.read_csv(f'{folder_path}/{file_name}', skiprows=3, delimiter=';', names=['Dag', 'Interest'], parse_dates=['Dag'])
 
     # Filter out the weekend days (Saturday = 5, Sunday = 6)
     trendsData['Weekday'] = trendsData['Dag'].dt.weekday  # Add a new column for the weekday (0 = Monday, ..., 6 = Sunday)
