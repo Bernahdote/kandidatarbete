@@ -13,11 +13,11 @@ from statsmodels.tsa.stattools import grangercausalitytests
 import statsmodels.api as sm
 
 # Set the stock symbol and date range
-symbol = 'SPY'
+symbol = 'BTC-USD'
 start_date = '2023-11-17'
 end_date = '2024-05-17'
 
-keyword = 'snp500'
+keyword = 'bitcoin'
 
 # Fetch stock and trends data
 diff_volume_series, trading_dates = fetch_stock_data(symbol, start_date, end_date)
