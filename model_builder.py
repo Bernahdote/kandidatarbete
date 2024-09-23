@@ -101,9 +101,9 @@ def fit_armax_model(y, X, ar_order, ma_order, x_order):
 
 # Example usage: fitting ARX model
 if __name__ == '__main__':
-    ar_order = 5  # Example AR lag order from PACF
-    ma_order = 2  # Example MA lag order from ACF
-    x_order = 2  # Example X lag order
+    ar_order = 1  # Example AR lag order from PACF
+    ma_order = 1  # Example MA lag order from ACF
+    x_order = 1  # Example X lag order
 
     # Fit ARX model first
     result_arx, residuals_arx = fit_arx_model(diff_volume_series, diff_interest_series, ar_order, x_order)
