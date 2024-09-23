@@ -13,11 +13,11 @@ from statsmodels.tsa.stattools import grangercausalitytests
 import statsmodels.api as sm
 
 # Set the stock symbol and date range
-symbol = 'BTC-USD'
+symbol = 'XRP-USD'
 start_date = '2023-11-17'
 end_date = '2024-05-17'
 
-keyword = 'bitcoin'
+keyword = 'buyxrp'
 
 # Fetch stock and trends data
 diff_volume_series, trading_dates = fetch_stock_data(symbol, start_date, end_date)
@@ -47,29 +47,8 @@ plot_pacf(diff_interest_series, lags=40)
 plt.title("PACF Plot for Interest Series")
 plt.show()
 
-
 # Function to fit ARX model using SARIMAX
 def fit_arx_model(y, X, ar_order, x_order):
-    """
-    Fits an ARX model with the specified AR order and exogenous lags.
-
-    Parameters:
-    y : pandas Series
-        The dependent time series (e.g., differenced volume series).
-    X : pandas Series
-        The exogenous time series (e.g., differenced interest series).
-    ar_order : int
-        The number of lags to include in the AR (autoregressive) part.
-    x_order : int
-        The number of lags to include for the exogenous variable.
-
-    Returns:
-    result : ARMAXResults
-        The fitted ARX model.
-    residuals : pandas Series
-        The residuals from the fitted ARX model.
-    """
-
     # Create lagged versions of the exogenous variable (X)
     X_lagged = sm.add_constant(X.shift(x_order).dropna())  # Add constant and shift exogenous data for lag
     y_aligned = y[X_lagged.index]  # Align y with X_lagged (matching dates)
@@ -94,23 +73,65 @@ def fit_arx_model(y, X, ar_order, x_order):
 
     return result, residuals
 
-#
+# Function to fit ARMAX model using SARIMAX
+def fit_armax_model(y, X, ar_order, ma_order, x_order):
+    # Create lagged versions of the exogenous variable (X)
+    X_lagged = sm.add_constant(X.shift(x_order).dropna())  # Add constant and shift exogenous data for lag
+    y_aligned = y[X_lagged.index]  # Align y with X_lagged (matching dates)
 
+    # Fit the ARMAX model (AR and MA parts included, with exogenous variables)
+    model_armax = sm.tsa.SARIMAX(y_aligned, exog=X_lagged, order=(ar_order, 0, ma_order))
+    result = model_armax.fit()
+
+    # Get the residuals
+    residuals = result.resid
+
+    # Print summary of the model
+    print(result.summary())
+
+    # Plot residuals to check for remaining autocorrelation
+    plt.figure(figsize=(10, 6))
+    plt.plot(residuals)
+    plt.title("Residuals of the ARMAX Model")
+    plt.xlabel("Date")
+    plt.ylabel("Residuals")
+    plt.show()
+
+    return result, residuals
+
+# Example usage: fitting ARX model
 if __name__ == '__main__':
-#Example usage: fitting ARX model
-    ar_order = 3  # Example AR lag order
-    x_order = 5  # Example X lag order
+    ar_order = 5  # Example AR lag order from PACF
+    ma_order = 2  # Example MA lag order from ACF
+    x_order = 2  # Example X lag order
 
-    result, residuals = fit_arx_model(diff_volume_series, diff_interest_series, ar_order, x_order)   
+    # Fit ARX model first
+    result_arx, residuals_arx = fit_arx_model(diff_volume_series, diff_interest_series, ar_order, x_order)
 
- 
+    # Print ACF plot for residuals from ARX to check for autocorrelation
+    plt.figure(figsize=(10, 6))
+    plot_acf(residuals_arx, lags=40)
+    plt.title("ACF Plot for Residuals (ARX)")
+    plt.show()
 
-# Define the ARMAX model
-# Replace p and q with the number of AR and MA lags determined from the ACF/PACF plots
-   # model = sm.tsa.ARMA(endog=y, exog=X, order=(p, q))  # Replace p and q with actual lags
+    # Now fit ARMAX model
+    result_armax, residuals_armax = fit_armax_model(diff_volume_series, diff_interest_series, ar_order, ma_order, x_order)
 
-# Fit the model
-   # results = model.fit()
+    # Print ACF plot for residuals from ARMAX to check for remaining autocorrelation
+    plt.figure(figsize=(10, 6))
+    plot_acf(residuals_armax, lags=40)
+    plt.title("ACF Plot for Residuals (ARMAX)")
+    plt.show()
 
-# Print the model summary
-  #  print(results.summary())
+    # Generate and plot predictions for the ARMAX model
+    predictions_armax = result_armax.predict()
+
+    # Plot the predictions against actual values
+    plt.figure(figsize=(10, 6))
+    plt.plot(diff_volume_series.index, diff_volume_series, label='Actual Differentiated Volume')
+    plt.plot(diff_volume_series.index, predictions_armax, label='Predicted Volume (ARMAX)', linestyle='--')
+    plt.title('ARMAX Model Predictions vs Actual Differentiated Volume')
+    plt.xlabel('Date')
+    plt.ylabel('Differentiated Volume')
+    plt.legend()
+    plt.show()
