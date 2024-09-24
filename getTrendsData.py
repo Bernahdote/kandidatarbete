@@ -2,6 +2,8 @@ import pandas as pd
 import os
 import matplotlib.pyplot as plt
 
+plot = True
+
 def fetch_google_trends_data(keyword, trading_dates):
 
     # Dynamically create the file name using the keyword
@@ -29,23 +31,31 @@ def fetch_google_trends_data(keyword, trading_dates):
     # Select the correct column for the time series data (Interest)
     series = trendsData_weekdays.set_index('Dag')['Interest']  # Set 'Dag' as index to align the differenced data properly
 
-    # 1. Plot the original data (weekdays only, matched with trading days)
-    plt.figure(figsize=(10, 6))
-    plt.plot(series.index, series)
-    plt.title('Original Data (Matched with Trading Days)')
-    plt.xlabel('Date')
-    plt.ylabel(f'Search Interest for {keyword}')
-    plt.show()
-
-    # 3. Apply differencing (to remove trend)
     diff_interest_series = series.diff().dropna()  # First difference
 
-    # Plot the differenced data (matched with trading days)
-    plt.figure(figsize=(10, 6))
-    plt.plot(diff_interest_series.index, diff_interest_series)
-    plt.title('Differenced Data (Matched with Trading Days)')
-    plt.xlabel('Date')
-    plt.ylabel(f'Differenced Search Interest for {keyword}')
-    plt.show()
-   
+
+    if plot: 
+        # 1. Plot the original data (weekdays only, matched with trading days)
+        plt.figure(figsize=(10, 6))
+        plt.plot(series.index, series)
+        plt.title('Original Data (Matched with Trading Days)')
+        plt.xlabel('Date')
+        plt.ylabel(f'Search Interest for {keyword}')
+        plt.show()
+
+        # 3. Apply differencing (to remove trend)
+        diff_interest_series = series.diff().dropna()  # First difference
+
+        # Plot the differenced data (matched with trading days)
+        plt.figure(figsize=(10, 6))
+        plt.plot(diff_interest_series.index, diff_interest_series)
+        plt.title('Differenced Data (Matched with Trading Days)')
+        plt.xlabel('Date')
+        plt.ylabel(f'Differenced Search Interest for {keyword}')
+        plt.show()
+
     return diff_interest_series
+
+
+
+
