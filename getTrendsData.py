@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler
 
 def fetch_google_trends_data(keyword, trading_dates):
 
@@ -38,14 +39,16 @@ def fetch_google_trends_data(keyword, trading_dates):
     plt.show()
 
     # 3. Apply differencing (to remove trend)
+    scaler = StandardScaler()
     diff_interest_series = series.diff().dropna()  # First difference
+    diff_interest_series_scaled = scaler.transform(diff_interest_series.values.reshape(-1, 1))
 
     # Plot the differenced data (matched with trading days)
     plt.figure(figsize=(10, 6))
-    plt.plot(diff_interest_series.index, diff_interest_series)
+    plt.plot(diff_interest_series.index, diff_interest_series_scaled)
     plt.title('Differenced Data (Matched with Trading Days)')
     plt.xlabel('Date')
     plt.ylabel(f'Differenced Search Interest for {keyword}')
     plt.show()
    
-    return diff_interest_series
+    return diff_interest_series_scaled

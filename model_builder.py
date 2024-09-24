@@ -23,6 +23,7 @@ keyword = 'buyxrp'
 diff_volume_series, trading_dates = fetch_stock_data(symbol, start_date, end_date)
 diff_interest_series = fetch_google_trends_data(keyword, trading_dates)
 
+
 # Plot ACF for volume series with confidence intervals
 plt.figure(figsize=(10, 6))
 plot_acf(diff_volume_series, lags=40)
@@ -106,7 +107,7 @@ if __name__ == '__main__':
     x_order = 1  # Example X lag order
 
     # Fit ARX model first
-    result_arx, residuals_arx = fit_arx_model(diff_volume_series, diff_interest_series, ar_order, x_order)
+    result_arx, residuals_arx = fit_arx_model(diff_volume_series_scaled, diff_interest_series_scaled, ar_order, x_order)
 
     # Print ACF plot for residuals from ARX to check for autocorrelation
     plt.figure(figsize=(10, 6))
@@ -115,7 +116,7 @@ if __name__ == '__main__':
     plt.show()
 
     # Now fit ARMAX model
-    result_armax, residuals_armax = fit_armax_model(diff_volume_series, diff_interest_series, ar_order, ma_order, x_order)
+    result_armax, residuals_armax = fit_armax_model(diff_volume_series_scaled, diff_interest_series_scaled, ar_order, ma_order, x_order)
 
     # Print ACF plot for residuals from ARMAX to check for remaining autocorrelation
     plt.figure(figsize=(10, 6))
