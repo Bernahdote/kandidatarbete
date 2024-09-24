@@ -9,6 +9,7 @@ numpy = "*"
 matplotlib = "*"
 statsmodels = "*"
 yfinance = "*"
+scikit-learn = "*"
 
 [dev-packages]
 ipykernel = "*"
