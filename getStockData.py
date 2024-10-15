@@ -7,7 +7,7 @@ from scipy.stats import zscore
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 
 
-plot = True
+plot = False
 
 def detect_and_handle_outliers(series, threshold=3):
     """

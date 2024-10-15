@@ -7,19 +7,19 @@ import statsmodels.api as sm
 from statsmodels.stats.stattools import jarque_bera
 import warnings
 import numpy as np
-from statsmodels.tsa.stattools import ccf
 from sklearn.metrics import mean_squared_error
-#from pmdarima import auto_arima
+import itertools
+from statsmodels.tsa.stattools import adfuller
 
 warnings.filterwarnings("ignore")
 
 # Parameters
-weekly = False  # Set this to True for weekly, False for daily
+weekly = True  # Set this to True for weekly, False for daily
 
-symbol = 'SHIB-USD'
-start_date = '2023-11-17'
+symbol = 'BTC-USD'
+start_date = '2019-11-17'
 end_date = '2024-05-17'
-keyword = 'shibainu'
+keyword = 'buybitcoin_weekly'
 
 # Fetch stock and trends data
 log_volume_series, trading_dates = fetch_stock_data(symbol, start_date, end_date, weekly=weekly)
@@ -41,8 +41,24 @@ def split_data(y, X, train_size=0.8):
 
     return y_train, y_test, X_train, X_test
 
+def perform_adfuller_test(series, series_name):
+    print(f"Performing ADF test on {series_name}:")
+    result = adfuller(series.dropna())
+    print(f"ADF Statistic: {result[0]}")
+    print(f"p-value: {result[1]}")
+    for key, value in result[4].items():
+        print(f"Critical Value {key}: {value}")
+    if result[1] < 0.05:
+        print("The time series is stationary (reject the null hypothesis).")
+    else:
+        print("The time series is non-stationary (fail to reject the null hypothesis).")
+    print()
+
 # Split data into 80% training and 20% testing
-log_volume_train, log_volume_test, log_interest_train, log_interest_test = split_data(log_volume_series, log_interest_series)
+log_volume_train, log_volume_test, log_interest_train, log_interest_test = split_data(log_volume_series, log_interest_series, train_size=0.8)
+
+# Perform ADF test on the exogenous variable
+perform_adfuller_test(log_interest_train, "log-transformed Google Trends series")
 
 # Plot PACF
 def plot_pacf_correlation(series, title_prefix):
@@ -58,177 +74,304 @@ def plot_acf_correlation(series, title_prefix):
     plt.title(f"ACF Plot for {title_prefix} Series")
     plt.show()
 
-# Fit ARX model
-def fit_arx_model(y, X, ar_order, x_order):
-    """Fit ARX model using SARIMAX."""
-    # Align the indices of X and y
-    X_aligned, y_aligned = X.align(y, join='inner')
-    
-    # Shift the exogenous variable and add a constant
-    X_lagged = sm.add_constant(X_aligned.shift(x_order).dropna())  # Lag and align X
-    
-    y_lagged = y_aligned.loc[X_lagged.index]  # Align y with lagged X
-    
-    model_arx = sm.tsa.SARIMAX(y_lagged, exog=X_lagged, order=(ar_order, 0, 0))
-    result = model_arx.fit()
-
-    print(result.summary())
-
-    # Plot residuals
-    residuals = result.resid
-    plt.figure(figsize=(10, 6))
-    plt.plot(residuals)
-    plt.title("Residuals of the ARX Model")
-    plt.xlabel("Date")
-    plt.ylabel("Residuals")
-    plt.show()
-
-    return result, residuals
-
-
 # Fit ARMAX model
 def fit_armax_model(y, X, ar_order, ma_order, x_order):
-    """Fit ARMAX model using SARIMAX."""
-    X_lagged = sm.add_constant(X.shift(x_order).dropna())  # Lag and align X
-    y_aligned = y[X_lagged.index]  # Align y with lagged X
+    """Fit ARMAX model using SARIMAX with multiple lags of the exogenous variable."""
+    # Create lagged versions of X up to x_order
+    X_lags = pd.concat([X.shift(i) for i in range(1, x_order + 1)], axis=1)
+    X_lags.columns = [f'X_lag_{i}' for i in range(1, x_order + 1)]
 
-    model_armax = sm.tsa.SARIMAX(y_aligned, exog=X_lagged, order=(ar_order, 0, ma_order))
-    result = model_armax.fit(maxiter=1000)
+    # Drop rows with NaN values that result from shifting
+    X_lags = X_lags.dropna()
+    y_aligned = y.loc[X_lags.index]  # Align y with the lagged X data
 
-    print(result.summary())
+    # Add a constant term for intercept
+    X_lags = sm.add_constant(X_lags)
 
-    # Plot residuals
-    residuals = result.resid
-    plt.figure(figsize=(10, 6))
-    plt.plot(residuals)
-    plt.title("Residuals of the ARMAX Model")
-    plt.xlabel("Date")
-    plt.ylabel("Residuals")
-    plt.show()
+    # Fit the SARIMAX model with the AR, MA, and exogenous inputs
+    try:
+        model_armax = sm.tsa.SARIMAX(y_aligned, exog=X_lags, order=(ar_order, 0, ma_order))
+        result = model_armax.fit(disp=False)
+        aic = result.aic
+        # Return the exogenous variable column names
+        exog_columns = X_lags.columns.tolist()
+        # Check parameter significance
+        p_values = result.pvalues
+        # Allow models with at most two insignificant parameters (p-value >= 0.05)
+        num_insignificant = (p_values >= 0.05).sum()
+        if num_insignificant > 2:
+            print(f"Model with AR={ar_order}, MA={ma_order}, X_lags={x_order} has more than two insignificant parameters.")
+            return None, np.inf, None
+    except Exception as e:
+        # If the model fails to converge, return None for result and np.inf for AIC
+        print(f"Failed to fit model with AR={ar_order}, MA={ma_order}, X_lags={x_order}: {e}")
+        result = None
+        aic = np.inf
+        exog_columns = None  # Adjusted
 
-    return result, residuals
-
-# Plot cross-correlation function
-def plot_ccf(series_x, series_y, lags=40):
-    cross_corr = ccf(series_x.dropna(), series_y.dropna())[:lags + 1]
-    conf_level = 1.96 / np.sqrt(len(series_x))  # 95% confidence interval
-    plt.figure(figsize=(10, 6))
-    plt.stem(range(lags + 1), cross_corr)
-    plt.axhline(y=conf_level, linestyle='--', color='r', label=f"95% Confidence (+/- {conf_level:.2f})")
-    plt.axhline(y=-conf_level, linestyle='--', color='r')
-    plt.axhline(y=0, color='black', lw=1)
-    significant_lags = np.where(np.abs(cross_corr) > conf_level)[0]
-    if len(significant_lags) > 0:
-        plt.scatter(significant_lags, cross_corr[significant_lags], color='red', zorder=5, label='Significant Lags')
-    plt.title('Cross-correlation Function with Confidence Intervals')
-    plt.xlabel('Lags')
-    plt.ylabel('Cross-correlation')
-    plt.legend()
-    plt.show()
+    return result, aic, exog_columns
 
 # Perform Jarque-Bera test
 def perform_jarque_bera_test(residuals, model_name):
     jb_stat, jb_pvalue, skew, kurtosis = jarque_bera(residuals.dropna())
     print(f"Jarque-Bera test p-value for {model_name} model residuals: {jb_pvalue}")
 
-# Plot predictions vs actual
-def plot_predictions(actual, predicted, title):
-    # Align predictions and actual test data by intersecting their indices
-    common_test_index = predictions_test.index.intersection(log_volume_test.index)
+# Define fit_arma_model function
+def fit_arma_model(y, ar_order, ma_order):
+    """Fit ARMA model using SARIMAX without exogenous variables."""
+    y_aligned = y.dropna()
+    # Fit the SARIMAX model with the AR and MA terms
+    try:
+        model_arma = sm.tsa.SARIMAX(y_aligned, order=(ar_order, 0, ma_order), trend='c')
+        result = model_arma.fit(disp=False)
+        aic = result.aic
+        # Check parameter significance
+        p_values = result.pvalues
+        # Allow models with at most two insignificant parameters (p-value >= 0.05)
+        num_insignificant = (p_values >= 0.05).sum()
+        if num_insignificant > 2:
+            print(f"Model with AR={ar_order}, MA={ma_order} has more than two insignificant parameters.")
+            return None, np.inf
+    except Exception as e:
+        # If the model fails to converge, return None for result and np.inf for AIC
+        print(f"Failed to fit model with AR={ar_order}, MA={ma_order}: {e}")
+        result = None
+        aic = np.inf
 
-    # Now align both the predicted and actual data
-    actual_test_aligned = log_volume_test.loc[common_test_index]
-    predictions_test_aligned = predictions_test.loc[common_test_index]
-
-    #Plotting
-    plt.figure(figsize=(10, 6))
-    plt.plot(actual_test_aligned.index, actual_test_aligned, label='Actual Volume')
-    plt.plot(predictions_test_aligned.index, predictions_test_aligned, label='Predicted Volume', linestyle='--')
-    plt.title('ARMAX Model Predictions VS Actual Traded Volume')
-    plt.xlabel('Date')
-    plt.ylabel('Volume')
-    plt.legend()
-    plt.show()
+    return result, aic
 
 if __name__ == '__main__':
     # Plot correlations for volume and interest series
-    plot_pacf_correlation(log_volume_train, "log Volume (Training)")
-    #plot_acf_correlation(log_interest_train, "log Interest (Training)")
+    #plot_pacf_correlation(log_volume_train, "log Volume (Training)")
 
-    # Initial ARX model fitting
-    print("Fitting initial ARX model...")
-    initial_ar_order = int(input("Enter initial AR order for ARX model: "))
-    initial_x_order = int(input("Enter Exogenous variable lag order for ARX model: "))
-    result_arx, residuals_arx = fit_arx_model(log_volume_train, log_interest_train, initial_ar_order, initial_x_order)
+    # Define the ranges for p, q, and x_order
+    p = range(0, 4)  # AR order
+    q = range(0, 2)  # MA order reduced to 0 or 1 to avoid overparameterization
+    x_order_range = range(1, 3)  # Exogenous variable lags
 
-    plot_acf_correlation(residuals_arx, "ARX")
-    perform_jarque_bera_test(residuals_arx, "ARX")
+    # Create combinations of p, q, and x_order
+    pdq = list(itertools.product(p, q))
+    x_orders = list(x_order_range)
 
-    # Start iterative ARMAX model fitting
-    while True:
-        print("\n--- Iterative ARMAX Model Fitting ---\n")
-        plot_ccf(residuals_arx, log_interest_train.loc[residuals_arx.index], lags=40)
+    # Initialize variables to store the best model
+    best_aic = np.inf
+    best_order = None
+    best_x_order = None
+    best_result = None
+    best_exog_columns = None  # Added
 
-        # Ask user to input model parameters
-        print("Please input the ARMAX model parameters:")
-        ar_order = int(input("Enter AR order (integer >= 0): "))
-        ma_order = int(input("Enter MA order (integer >= 0): "))
-        x_order = int(input("Enter Exogenous variable lag order (integer >= 0): "))
+    # Grid search over p, q, and x_order
+    print("Starting grid search over p, q, and x_order allowing up to two insignificant parameters...")
+    for order in pdq:
+        for x_order in x_orders:
+            print(f"Trying AR={order[0]}, MA={order[1]}, X_lags={x_order}")
+            result, aic, exog_columns = fit_armax_model(log_volume_train, log_interest_train, order[0], order[1], x_order)
+            if result is not None and aic < best_aic:
+                best_aic = aic
+                best_order = order
+                best_x_order = x_order
+                best_result = result
+                best_exog_columns = exog_columns  # Capturing exog_columns
 
-        # Fit ARMAX model on training data
-        result_armax, residuals_armax = fit_armax_model(log_volume_train, log_interest_train, ar_order, ma_order, x_order)
-        plot_acf_correlation(residuals_armax, "ARMAX")
-        perform_jarque_bera_test(residuals_armax, "ARMAX")
+    # Check if a best model was found
+    if best_result is not None:
+        print(f"\nBest ARMAX model found: AR={best_order[0]}, MA={best_order[1]}, X_lags={best_x_order} with AIC={best_aic}")
+        print(best_result.summary())
 
-        # Prepare to store the predictions
-        predictions_test = []
+        # Perform residual analysis
+        residuals = best_result.resid
+        perform_jarque_bera_test(residuals, "Best ARMAX Model")
+        #plot_acf_correlation(residuals, "Best ARMAX Model Residuals")
 
-        # Rolling forecast
-        for i in range(len(log_interest_test)):
-            # Combine past data with test predictions
-            past_interest = pd.concat([log_interest_train, log_interest_test[:i]])
-            past_volume = pd.concat([log_volume_train, pd.Series(predictions_test)])
+        # Rolling forecast with confidence intervals
+        predictions = []
+        lower_bounds = []  # Store lower bounds of confidence intervals
+        upper_bounds = []  # Store upper bounds of confidence intervals
+        history_y = log_volume_train.copy()
+        history_X = log_interest_train.copy()
+        test_index = log_volume_test.index
 
-            # Align the exogenous data with the correct lag
-            exog_current = sm.add_constant(past_interest.shift(x_order).dropna())
-            exog_current = exog_current.iloc[-1:].values.reshape(1, -1)  # Get the last row
+        for t in range(len(log_volume_test)):
+            # Prepare exogenous variables for training
+            X_lags = pd.concat([history_X.shift(i) for i in range(1, best_x_order + 1)], axis=1)
+            X_lags.columns = [f'X_lag_{i}' for i in range(1, best_x_order + 1)]
+            X_lags = sm.add_constant(X_lags)
+            X_lags = X_lags.dropna()
 
-            # Forecast the next step using the model
-            pred = result_armax.get_forecast(steps=1, exog=exog_current).predicted_mean
-            predictions_test.append(pred.iloc[0])
+            # Align endogenous variable
+            y_aligned = history_y.loc[X_lags.index]
 
-        # Convert predictions to a series with the test index
-        predictions_test_series = pd.Series(predictions_test, index=log_interest_test.index[:len(predictions_test)])
+            # Re-fit the model on the history data
+            model = sm.tsa.SARIMAX(y_aligned, exog=X_lags, order=(best_order[0], 0, best_order[1]))
+            result = model.filter(best_result.params)
 
-        # Compare predictions to actual values and calculate MSE
-        mse = mean_squared_error(log_volume_test, predictions_test_series)
-        print(f"Mean Squared Error (MSE) on the test set: {mse}")
+            # Prepare exogenous variables for forecasting
+            exog_forecast_lags = []
+            for lag in range(1, best_x_order + 1):
+                idx = -lag + t + 1
+                if idx >= 0:
+                    exog_value = log_interest_test.iloc[idx]
+                else:
+                    exog_value = history_X.iloc[idx]
+                exog_forecast_lags.append(exog_value)
+            exog_forecast_lags = exog_forecast_lags[::-1]  # Reverse to match the lag order
+
+            # Combine with constant term
+            exog_forecast_values = [1] + exog_forecast_lags
+            exog_forecast_df = pd.DataFrame([exog_forecast_values], columns=best_exog_columns)
+
+            # Forecast one step ahead, including confidence intervals
+            forecast_result = result.get_forecast(steps=1, exog=exog_forecast_df)
+            pred_mean = forecast_result.predicted_mean.iloc[0]
+            conf_int = forecast_result.conf_int(alpha=0.05)  # 95% confidence interval
+            lower_bound = conf_int.iloc[0, 0]  # Lower bound
+            upper_bound = conf_int.iloc[0, 1]  # Upper bound
+
+            predictions.append(pred_mean)
+            lower_bounds.append(lower_bound)
+            upper_bounds.append(upper_bound)
+
+            # Update history with the new observation
+            history_y = pd.concat([history_y, log_volume_test.iloc[t:t+1]])
+            history_X = pd.concat([history_X, log_interest_test.iloc[t:t+1]])
+
+        # Convert predictions to series
+        predictions_series = pd.Series(predictions, index=test_index[:len(predictions)])
+        lower_bounds_series = pd.Series(lower_bounds, index=test_index[:len(lower_bounds)])
+        upper_bounds_series = pd.Series(upper_bounds, index=test_index[:len(upper_bounds)])
+        actual_test_aligned = log_volume_test.loc[test_index[:len(predictions)]]
+
+        # Drop any NaNs
+        combined = pd.concat([actual_test_aligned, predictions_series, lower_bounds_series, upper_bounds_series], axis=1).dropna()
+        actual_test_aligned = combined.iloc[:, 0]
+        predictions_series = combined.iloc[:, 1]
+        lower_bounds_series = combined.iloc[:, 2]
+        upper_bounds_series = combined.iloc[:, 3]
+
+        # Calculate Mean Squared Error
+        mse = mean_squared_error(actual_test_aligned, predictions_series)
+        print(f"Mean Squared Error (MSE) on the test set for ARMAX model: {mse}")
 
         # Calculate correct rise/fall predictions
-        actual_changes = log_volume_test.diff().dropna()
-        predicted_changes = predictions_test_series.diff().dropna()
+        actual_changes = actual_test_aligned.diff().dropna()
+        predicted_changes = predictions_series.diff().dropna()
 
         correct_predictions = (np.sign(actual_changes) == np.sign(predicted_changes)).sum()
         total_predictions = len(predicted_changes)
-
-        print(f"Correct Rise/Fall Predictions: {correct_predictions}/{total_predictions}")
         accuracy = correct_predictions / total_predictions * 100
-        print(f"Accuracy of predicting rise/fall: {accuracy:.2f}%")
 
-        # Plot predictions vs actual
-        plt.figure(figsize=(10, 6))
-        plt.plot(log_volume_test.index, log_volume_test, label='Actual Volume')
-        plt.plot(predictions_test_series.index, predictions_test_series, label='Predicted Volume', linestyle='--')
-        plt.title('Rolling Forecast: ARMAX Predictions VS Actual Traded Volume')
+        print(f"Correct Rise/Fall Predictions for ARMAX model: {correct_predictions}/{total_predictions}")
+        print(f"Accuracy of predicting rise/fall for ARMAX model: {accuracy:.2f}%")
+    else:
+        print("No suitable ARMAX model was found during grid search.")
+
+    # ================== Added Code Starts Here ==================
+
+    # Fit ARMA model
+    # Define the ranges for p and q
+    p = range(0, 4)  # AR order
+    q = range(0, 2)  # MA order reduced to 0 or 1 to avoid overparameterization
+
+    # Create combinations of p and q
+    pdq = list(itertools.product(p, q))
+
+    # Initialize variables to store the best ARMA model
+    best_aic_arma = np.inf
+    best_order_arma = None
+    best_result_arma = None
+
+    # Grid search over p and q for ARMA model
+    print("\nStarting grid search over p and q for ARMA model allowing up to two insignificant parameters...")
+    for order in pdq:
+        print(f"Trying AR={order[0]}, MA={order[1]}")
+        result_arma, aic_arma = fit_arma_model(log_volume_train, order[0], order[1])
+        if result_arma is not None and aic_arma < best_aic_arma:
+            best_aic_arma = aic_arma
+            best_order_arma = order
+            best_result_arma = result_arma
+
+    # Check if a best ARMA model was found
+    if best_result_arma is not None:
+        print(f"\nBest ARMA model found: AR={best_order_arma[0]}, MA={best_order_arma[1]} with AIC={best_aic_arma}")
+        print(best_result_arma.summary())
+
+        # Perform residual analysis
+        residuals_arma = best_result_arma.resid
+        perform_jarque_bera_test(residuals_arma, "Best ARMA Model")
+        #plot_acf_correlation(residuals_arma, "Best ARMA Model Residuals")
+
+        # Rolling forecast with confidence intervals for ARMA model
+        predictions_arma = []
+        lower_bounds_arma = []  # Store lower bounds of confidence intervals
+        upper_bounds_arma = []  # Store upper bounds of confidence intervals
+        history_y_arma = log_volume_train.copy()
+        test_index_arma = log_volume_test.index
+
+        for t in range(len(log_volume_test)):
+            # Fit the model on the history data
+            y_aligned_arma = history_y_arma.dropna()
+            model_arma = sm.tsa.SARIMAX(y_aligned_arma, order=(best_order_arma[0], 0, best_order_arma[1]), trend='c')
+            result_arma = model_arma.filter(best_result_arma.params)
+
+            # Forecast one step ahead, including confidence intervals
+            forecast_result_arma = result_arma.get_forecast(steps=1)
+            pred_mean_arma = forecast_result_arma.predicted_mean.iloc[0]
+            conf_int_arma = forecast_result_arma.conf_int(alpha=0.05)  # 95% confidence interval
+            lower_bound_arma = conf_int_arma.iloc[0, 0]  # Lower bound
+            upper_bound_arma = conf_int_arma.iloc[0, 1]  # Upper bound
+
+            predictions_arma.append(pred_mean_arma)
+            lower_bounds_arma.append(lower_bound_arma)
+            upper_bounds_arma.append(upper_bound_arma)
+
+            # Update history with the new observation
+            history_y_arma = pd.concat([history_y_arma, log_volume_test.iloc[t:t+1]])
+
+        # Convert predictions to series
+        predictions_series_arma = pd.Series(predictions_arma, index=test_index_arma[:len(predictions_arma)])
+        lower_bounds_series_arma = pd.Series(lower_bounds_arma, index=test_index_arma[:len(lower_bounds_arma)])
+        upper_bounds_series_arma = pd.Series(upper_bounds_arma, index=test_index_arma[:len(upper_bounds_arma)])
+        actual_test_aligned_arma = log_volume_test.loc[test_index_arma[:len(predictions_arma)]]
+
+        # Drop any NaNs
+        combined_arma = pd.concat([actual_test_aligned_arma, predictions_series_arma, lower_bounds_series_arma, upper_bounds_series_arma], axis=1).dropna()
+        actual_test_aligned_arma = combined_arma.iloc[:, 0]
+        predictions_series_arma = combined_arma.iloc[:, 1]
+        lower_bounds_series_arma = combined_arma.iloc[:, 2]
+        upper_bounds_series_arma = combined_arma.iloc[:, 3]
+
+        # Calculate Mean Squared Error
+        mse_arma = mean_squared_error(actual_test_aligned_arma, predictions_series_arma)
+        print(f"Mean Squared Error (MSE) on the test set for ARMA model: {mse_arma}")
+
+        # Calculate correct rise/fall predictions
+        actual_changes_arma = actual_test_aligned_arma.diff().dropna()
+        predicted_changes_arma = predictions_series_arma.diff().dropna()
+
+        correct_predictions_arma = (np.sign(actual_changes_arma) == np.sign(predicted_changes_arma)).sum()
+        total_predictions_arma = len(predicted_changes_arma)
+        accuracy_arma = correct_predictions_arma / total_predictions_arma * 100
+
+        print(f"Correct Rise/Fall Predictions for ARMA model: {correct_predictions_arma}/{total_predictions_arma}")
+        print(f"Accuracy of predicting rise/fall for ARMA model: {accuracy_arma:.2f}%")
+    else:
+        print("No suitable ARMA model was found during grid search.")
+
+    # ================== Added Code Ends Here ==================
+
+    # Combined Plotting Section
+    if best_result is not None and best_result_arma is not None:
+        # Plot predictions vs actual with confidence intervals for both ARMAX and ARMA
+        plt.figure(figsize=(12, 6))
+        plt.plot(actual_test_aligned.index, actual_test_aligned, label='Actual Volume')
+        plt.plot(predictions_series.index, predictions_series, label='ARMAX Predicted Volume', linestyle='--')
+        plt.fill_between(predictions_series.index, lower_bounds_series, upper_bounds_series, color='gray', alpha=0.2, label='ARMAX 95% Confidence Interval')
+        plt.plot(predictions_series_arma.index, predictions_series_arma, label='ARMA Predicted Volume', linestyle='-.')
+        plt.fill_between(predictions_series_arma.index, lower_bounds_series_arma, upper_bounds_series_arma, color='pink', alpha=0.2, label='ARMA 95% Confidence Interval')
+        plt.title(f"Rolling Forecast: ARMAX and ARMA Predictions VS Actual Traded Volume for {symbol} ")
         plt.xlabel('Date')
         plt.ylabel('Volume')
         plt.legend()
         plt.show()
-
-        # Update residuals for next iteration
-        residuals_arx = residuals_armax
-
-        # Ask if user wants to continue or exit
-        cont = input("Do you want to try different lag orders for the ARMAX model? (yes/no): ").strip().lower()
-        if cont != 'yes':
-            break
+    else:
+        print("Could not plot predictions as one or both models were not successfully fitted.")

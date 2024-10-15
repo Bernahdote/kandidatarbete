@@ -5,7 +5,7 @@ import numpy as np
 from statsmodels.tsa.stattools import adfuller
 from scipy import stats
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
-plot = True
+plot = False
 
 def detect_and_handle_outliers(series, method="zscore", threshold=3):
     """
