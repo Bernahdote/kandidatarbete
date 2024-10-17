@@ -1,43 +1,48 @@
+# Import necessary libraries
+import os
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
-from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
-from getStockData import fetch_stock_data
-from getTrendsData import fetch_google_trends_data
+from statsmodels.tsa.stattools import adfuller
 import statsmodels.api as sm
 from statsmodels.stats.stattools import jarque_bera
 import warnings
-import numpy as np
-from sklearn.metrics import mean_squared_error
 import itertools
-from statsmodels.tsa.stattools import adfuller
+from sklearn.metrics import mean_squared_error
+from getStockData import fetch_stock_data
+from getTrendsData import fetch_google_trends_data
 
 warnings.filterwarnings("ignore")
 
-# Parameters
-weekly = True  # Set this to True for weekly, False for daily
+
+weekly = False  # Set this to True for weekly, False for daily
 
 symbol = 'BTC-USD'
-start_date = '2019-11-17'
-end_date = '2024-05-17'
-keyword = 'buybitcoin_weekly'
+start_date1 = '2023-05-23'
+end_date1 = '2023-11-23'
+start_date2 = '2023-11-17'
+end_date2 = '2024-05-17'
 
-# Fetch stock and trends data
-log_volume_series, trading_dates = fetch_stock_data(symbol, start_date, end_date, weekly=weekly)
-log_interest_series = fetch_google_trends_data(keyword, trading_dates, weekly=weekly)
+
+keyword = 'buybitcoin'
+
+
 
 def split_data(y, X, train_size=0.8):
-    """Splits y and X into aligned train and test sets."""
-    # Find the number of observations for training
-    train_len = int(len(y) * train_size)
+    """Splits y and X into aligned train and test sets over the union of their indexes."""
+    # Align both y and X over the union of their indexes
+    all_index = y.index.union(X.index)
+    y_aligned = y.reindex(all_index)
+    X_aligned = X.reindex(all_index)
 
-    # Align both y and X using the same index
-    common_index = y.index.intersection(X.index)
-    y_aligned = y.loc[common_index]
-    X_aligned = X.loc[common_index]
+    # Fill missing values (forward-fill or interpolate)
+    y_aligned = y_aligned.fillna(method='ffill')
+    X_aligned = X_aligned.fillna(method='ffill')
 
     # Now split the aligned data into train/test
-    y_train, y_test = y_aligned[:train_len], y_aligned[train_len:]
-    X_train, X_test = X_aligned[:train_len], X_aligned[train_len:]
+    train_len = int(len(y_aligned) * train_size)
+    y_train, y_test = y_aligned.iloc[:train_len], y_aligned.iloc[train_len:]
+    X_train, X_test = X_aligned.iloc[:train_len], X_aligned.iloc[train_len:]
 
     return y_train, y_test, X_train, X_test
 
@@ -54,25 +59,6 @@ def perform_adfuller_test(series, series_name):
         print("The time series is non-stationary (fail to reject the null hypothesis).")
     print()
 
-# Split data into 80% training and 20% testing
-log_volume_train, log_volume_test, log_interest_train, log_interest_test = split_data(log_volume_series, log_interest_series, train_size=0.8)
-
-# Perform ADF test on the exogenous variable
-perform_adfuller_test(log_interest_train, "log-transformed Google Trends series")
-
-# Plot PACF
-def plot_pacf_correlation(series, title_prefix):
-    plt.figure(figsize=(10, 6))
-    plot_pacf(series.dropna(), lags=40)
-    plt.title(f"PACF Plot for {title_prefix} Series")
-    plt.show()
-
-# Plot ACF 
-def plot_acf_correlation(series, title_prefix):
-    plt.figure(figsize=(10, 6))
-    plot_acf(series.dropna(), lags=40)
-    plt.title(f"ACF Plot for {title_prefix} Series")
-    plt.show()
 
 # Fit ARMAX model
 def fit_armax_model(y, X, ar_order, ma_order, x_order):
@@ -107,7 +93,7 @@ def fit_armax_model(y, X, ar_order, ma_order, x_order):
         print(f"Failed to fit model with AR={ar_order}, MA={ma_order}, X_lags={x_order}: {e}")
         result = None
         aic = np.inf
-        exog_columns = None  # Adjusted
+        exog_columns = None
 
     return result, aic, exog_columns
 
@@ -141,13 +127,35 @@ def fit_arma_model(y, ar_order, ma_order):
     return result, aic
 
 if __name__ == '__main__':
-    # Plot correlations for volume and interest series
-    #plot_pacf_correlation(log_volume_train, "log Volume (Training)")
+
+    # Fetch stock and trends data
+    log_volume_series, trading_dates = fetch_stock_data(symbol, start_date1, end_date2, weekly=weekly)
+    log_interest_series = fetch_google_trends_data(keyword, trading_dates, start_date1, end_date1, start_date2, end_date2, weekly=weekly, plot=True)
+
+    # Verify date ranges
+    print(f"log_volume_series dates: {log_volume_series.index.min()} to {log_volume_series.index.max()}")
+    print(f"log_interest_series dates: {log_interest_series.index.min()} to {log_interest_series.index.max()}")
+
+    # Plot the interest series over the entire date range
+    plt.figure(figsize=(12, 6))
+    plt.plot(log_interest_series.index, log_interest_series, label='Google Trends Interest')
+    plt.title(f"Google Trends Interest for '{keyword}'")
+    plt.xlabel('Date')
+    plt.ylabel('Log Interest')
+    plt.legend()
+    plt.show()
+    plt.close()
+
+    # Split data into training and testing sets
+    log_volume_train, log_volume_test, log_interest_train, log_interest_test = split_data(log_volume_series, log_interest_series, train_size=0.8)
+
+    # Perform ADF test on the exogenous variable
+    perform_adfuller_test(log_interest_train, "log-transformed Google Trends series")
 
     # Define the ranges for p, q, and x_order
-    p = range(0, 4)  # AR order
-    q = range(0, 2)  # MA order reduced to 0 or 1 to avoid overparameterization
-    x_order_range = range(1, 3)  # Exogenous variable lags
+    p = range(0, 10)  # AR order
+    q = range(0, 10)  # MA order 
+    x_order_range = range(1, 10)  # Exogenous variable lags
 
     # Create combinations of p, q, and x_order
     pdq = list(itertools.product(p, q))
@@ -158,7 +166,7 @@ if __name__ == '__main__':
     best_order = None
     best_x_order = None
     best_result = None
-    best_exog_columns = None  # Added
+    best_exog_columns = None
 
     # Grid search over p, q, and x_order
     print("Starting grid search over p, q, and x_order allowing up to two insignificant parameters...")
@@ -171,7 +179,7 @@ if __name__ == '__main__':
                 best_order = order
                 best_x_order = x_order
                 best_result = result
-                best_exog_columns = exog_columns  # Capturing exog_columns
+                best_exog_columns = exog_columns
 
     # Check if a best model was found
     if best_result is not None:
@@ -181,7 +189,6 @@ if __name__ == '__main__':
         # Perform residual analysis
         residuals = best_result.resid
         perform_jarque_bera_test(residuals, "Best ARMAX Model")
-        #plot_acf_correlation(residuals, "Best ARMAX Model Residuals")
 
         # Rolling forecast with confidence intervals
         predictions = []
@@ -249,7 +256,7 @@ if __name__ == '__main__':
         upper_bounds_series = combined.iloc[:, 3]
 
         # Calculate Mean Squared Error
-        mse = mean_squared_error(actual_test_aligned, predictions_series)
+        mse = mean_squared_error(actual_test_aligned, predictions_series, squared = False)
         print(f"Mean Squared Error (MSE) on the test set for ARMAX model: {mse}")
 
         # Calculate correct rise/fall predictions
@@ -265,12 +272,12 @@ if __name__ == '__main__':
     else:
         print("No suitable ARMAX model was found during grid search.")
 
-    # ================== Added Code Starts Here ==================
+    # ================== ARMA Model ==================
 
     # Fit ARMA model
     # Define the ranges for p and q
-    p = range(0, 4)  # AR order
-    q = range(0, 2)  # MA order reduced to 0 or 1 to avoid overparameterization
+    p = range(0, 3)  # AR order
+    q = range(0, 3)  # MA order reduced to 0 or 1 to avoid overparameterization
 
     # Create combinations of p and q
     pdq = list(itertools.product(p, q))
@@ -298,7 +305,6 @@ if __name__ == '__main__':
         # Perform residual analysis
         residuals_arma = best_result_arma.resid
         perform_jarque_bera_test(residuals_arma, "Best ARMA Model")
-        #plot_acf_correlation(residuals_arma, "Best ARMA Model Residuals")
 
         # Rolling forecast with confidence intervals for ARMA model
         predictions_arma = []
@@ -341,8 +347,10 @@ if __name__ == '__main__':
         upper_bounds_series_arma = combined_arma.iloc[:, 3]
 
         # Calculate Mean Squared Error
-        mse_arma = mean_squared_error(actual_test_aligned_arma, predictions_series_arma)
+        mse_arma = mean_squared_error(actual_test_aligned_arma, predictions_series_arma, squared = False)
+
         print(f"Mean Squared Error (MSE) on the test set for ARMA model: {mse_arma}")
+        print(f"The ARMAX model is {mse_arma/mse} times better than the ARMA")
 
         # Calculate correct rise/fall predictions
         actual_changes_arma = actual_test_aligned_arma.diff().dropna()
@@ -357,21 +365,29 @@ if __name__ == '__main__':
     else:
         print("No suitable ARMA model was found during grid search.")
 
-    # ================== Added Code Ends Here ==================
-
     # Combined Plotting Section
     if best_result is not None and best_result_arma is not None:
-        # Plot predictions vs actual with confidence intervals for both ARMAX and ARMA
+        # Combine training and test data for actual volume
+        actual_volume_full = pd.concat([log_volume_train, log_volume_test])
+
+        # Plot actual volume over the full date range
         plt.figure(figsize=(12, 6))
-        plt.plot(actual_test_aligned.index, actual_test_aligned, label='Actual Volume')
-        plt.plot(predictions_series.index, predictions_series, label='ARMAX Predicted Volume', linestyle='--')
-        plt.fill_between(predictions_series.index, lower_bounds_series, upper_bounds_series, color='gray', alpha=0.2, label='ARMAX 95% Confidence Interval')
-        plt.plot(predictions_series_arma.index, predictions_series_arma, label='ARMA Predicted Volume', linestyle='-.')
-        plt.fill_between(predictions_series_arma.index, lower_bounds_series_arma, upper_bounds_series_arma, color='pink', alpha=0.2, label='ARMA 95% Confidence Interval')
-        plt.title(f"Rolling Forecast: ARMAX and ARMA Predictions VS Actual Traded Volume for {symbol} ")
+        plt.plot(actual_volume_full.index, actual_volume_full, label='Actual Volume', color='blue')
+
+        # Plot ARMAX predictions
+        plt.plot(predictions_series.index, predictions_series, label='ARMAX Predicted Volume', linestyle='--', color='green')
+        plt.fill_between(predictions_series.index, lower_bounds_series, upper_bounds_series, color='green', alpha=0.2, label='ARMAX 95% Confidence Interval')
+
+        # Plot ARMA predictions
+        plt.plot(predictions_series_arma.index, predictions_series_arma, label='ARMA Predicted Volume', linestyle='-.', color='red')
+        plt.fill_between(predictions_series_arma.index, lower_bounds_series_arma, upper_bounds_series_arma, color='red', alpha=0.2, label='ARMA 95% Confidence Interval')
+
+        plt.title(f"Rolling Forecast: ARMAX and ARMA Predictions VS Actual Traded Volume for {symbol}")
         plt.xlabel('Date')
         plt.ylabel('Volume')
         plt.legend()
         plt.show()
+        plt.close()
     else:
         print("Could not plot predictions as one or both models were not successfully fitted.")
+0
