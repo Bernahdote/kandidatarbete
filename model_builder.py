@@ -1,5 +1,4 @@
 # Import necessary libraries
-import os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -15,17 +14,20 @@ from getTrendsData import fetch_google_trends_data
 warnings.filterwarnings("ignore")
 
 
-weekly = False  # Set this to True for weekly, False for daily
-
-symbol = 'BTC-USD'
-start_date1 = '2023-05-23'
+symbol = 'ETH-USD'
+start_date1 = '2023-03-23'
 end_date1 = '2023-11-23'
 start_date2 = '2023-11-17'
-end_date2 = '2024-05-17'
+end_date2 = '2024-07-17'
 
 
-keyword = 'buybitcoin'
+keyword = 'buyethereum'
+folder = 'ETHEREUM'
 
+
+p = range(0, 3)  # AR order
+q = range(0, 3)  # MA order 
+x_order_range = range(1, 5)  # Exogenous variable lags
 
 
 def split_data(y, X, train_size=0.8):
@@ -97,11 +99,6 @@ def fit_armax_model(y, X, ar_order, ma_order, x_order):
 
     return result, aic, exog_columns
 
-# Perform Jarque-Bera test
-def perform_jarque_bera_test(residuals, model_name):
-    jb_stat, jb_pvalue, skew, kurtosis = jarque_bera(residuals.dropna())
-    print(f"Jarque-Bera test p-value for {model_name} model residuals: {jb_pvalue}")
-
 # Define fit_arma_model function
 def fit_arma_model(y, ar_order, ma_order):
     """Fit ARMA model using SARIMAX without exogenous variables."""
@@ -126,36 +123,45 @@ def fit_arma_model(y, ar_order, ma_order):
 
     return result, aic
 
+
+# Perform Jarque-Bera test
+def perform_jarque_bera_test(residuals, model_name):
+    jb_stat, jb_pvalue, skew, kurtosis = jarque_bera(residuals.dropna())
+    print(f"Jarque-Bera test p-value for {model_name} model residuals: {jb_pvalue}") 
+    
 if __name__ == '__main__':
 
     # Fetch stock and trends data
-    log_volume_series, trading_dates = fetch_stock_data(symbol, start_date1, end_date2, weekly=weekly)
-    log_interest_series = fetch_google_trends_data(keyword, trading_dates, start_date1, end_date1, start_date2, end_date2, weekly=weekly, plot=True)
+    log_volume_series, trading_dates = fetch_stock_data(symbol, start_date1, end_date2)
+    log_interest_series = fetch_google_trends_data(keyword, folder, trading_dates, start_date1, end_date1, start_date2, end_date2, plot=True)
+
+    plt.figure(figsize=(12, 6))
+    plt.subplot(2, 1, 1)
+    plt.plot(log_interest_series.index, log_interest_series, color = 'blue')
+    plt.title(f'Log-Transformed Google Trends Data with Outliers Handled')
+    plt.xlabel('Date')
+    plt.ylabel('Log Returns')
+
+    # Second subplot: Log-Transformed Traded Volume Data
+    plt.subplot(2, 1, 2)
+    plt.plot(log_volume_series.index, log_volume_series, color = 'red')
+    plt.title(f'Log-Transformed Traded Volume Data')
+    plt.xlabel('Date')
+    plt.ylabel('Log Returns')
+
+    # Show the combined plot
+    plt.tight_layout()
+    plt.show()
 
     # Verify date ranges
     print(f"log_volume_series dates: {log_volume_series.index.min()} to {log_volume_series.index.max()}")
     print(f"log_interest_series dates: {log_interest_series.index.min()} to {log_interest_series.index.max()}")
-
-    # Plot the interest series over the entire date range
-    plt.figure(figsize=(12, 6))
-    plt.plot(log_interest_series.index, log_interest_series, label='Google Trends Interest')
-    plt.title(f"Google Trends Interest for '{keyword}'")
-    plt.xlabel('Date')
-    plt.ylabel('Log Interest')
-    plt.legend()
-    plt.show()
-    plt.close()
 
     # Split data into training and testing sets
     log_volume_train, log_volume_test, log_interest_train, log_interest_test = split_data(log_volume_series, log_interest_series, train_size=0.8)
 
     # Perform ADF test on the exogenous variable
     perform_adfuller_test(log_interest_train, "log-transformed Google Trends series")
-
-    # Define the ranges for p, q, and x_order
-    p = range(0, 10)  # AR order
-    q = range(0, 10)  # MA order 
-    x_order_range = range(1, 10)  # Exogenous variable lags
 
     # Create combinations of p, q, and x_order
     pdq = list(itertools.product(p, q))
@@ -256,8 +262,8 @@ if __name__ == '__main__':
         upper_bounds_series = combined.iloc[:, 3]
 
         # Calculate Mean Squared Error
-        mse = mean_squared_error(actual_test_aligned, predictions_series, squared = False)
-        print(f"Mean Squared Error (MSE) on the test set for ARMAX model: {mse}")
+        rmse = mean_squared_error(actual_test_aligned, predictions_series, squared = False)
+        print(f"Root mean Squared Error (RMSE) on the test set for ARMAX model: {rmse}")
 
         # Calculate correct rise/fall predictions
         actual_changes = actual_test_aligned.diff().dropna()
@@ -273,11 +279,6 @@ if __name__ == '__main__':
         print("No suitable ARMAX model was found during grid search.")
 
     # ================== ARMA Model ==================
-
-    # Fit ARMA model
-    # Define the ranges for p and q
-    p = range(0, 3)  # AR order
-    q = range(0, 3)  # MA order reduced to 0 or 1 to avoid overparameterization
 
     # Create combinations of p and q
     pdq = list(itertools.product(p, q))
@@ -347,10 +348,10 @@ if __name__ == '__main__':
         upper_bounds_series_arma = combined_arma.iloc[:, 3]
 
         # Calculate Mean Squared Error
-        mse_arma = mean_squared_error(actual_test_aligned_arma, predictions_series_arma, squared = False)
+        rmse_arma = mean_squared_error(actual_test_aligned_arma, predictions_series_arma, squared = False)
 
-        print(f"Mean Squared Error (MSE) on the test set for ARMA model: {mse_arma}")
-        print(f"The ARMAX model is {mse_arma/mse} times better than the ARMA")
+        print(f"Root mean Squared Error (RMSE) on the test set for ARMA model: {rmse_arma}")
+        print(f"The ARMAX model is {rmse_arma/rmse} times better than the ARMA in terms of RMSE")
 
         # Calculate correct rise/fall predictions
         actual_changes_arma = actual_test_aligned_arma.diff().dropna()
@@ -372,7 +373,7 @@ if __name__ == '__main__':
 
         # Plot actual volume over the full date range
         plt.figure(figsize=(12, 6))
-        plt.plot(actual_volume_full.index, actual_volume_full, label='Actual Volume', color='blue')
+        plt.plot(log_volume_test.index, log_volume_test, label='Actual Volume', color='blue')
 
         # Plot ARMAX predictions
         plt.plot(predictions_series.index, predictions_series, label='ARMAX Predicted Volume', linestyle='--', color='green')
