@@ -14,19 +14,19 @@ from getTrendsData import fetch_google_trends_data
 warnings.filterwarnings("ignore")
 
 
-symbol = 'ETH-USD'
+symbol = 'BTC-USD'
 start_date1 = '2023-03-23'
 end_date1 = '2023-11-23'
 start_date2 = '2023-11-17'
 end_date2 = '2024-07-17'
 
 
-keyword = 'buyethereum'
-folder = 'ETHEREUM'
+keyword = 'BTC'
+folder = 'BITCOIN'
 
 
-p = range(0, 3)  # AR order
-q = range(0, 3)  # MA order 
+p = range(0, 5)  # AR order
+q = range(0, 5)  # MA order 
 x_order_range = range(1, 5)  # Exogenous variable lags
 
 
@@ -51,12 +51,9 @@ def split_data(y, X, train_size=0.8):
 def perform_adfuller_test(series, series_name):
     print(f"Performing ADF test on {series_name}:")
     result = adfuller(series.dropna())
-    print(f"ADF Statistic: {result[0]}")
     print(f"p-value: {result[1]}")
-    for key, value in result[4].items():
-        print(f"Critical Value {key}: {value}")
     if result[1] < 0.05:
-        print("The time series is stationary (reject the null hypothesis).")
+        print("The Volume series is stationary (reject the null hypothesis).")
     else:
         print("The time series is non-stationary (fail to reject the null hypothesis).")
     print()
@@ -138,24 +135,20 @@ if __name__ == '__main__':
     plt.figure(figsize=(12, 6))
     plt.subplot(2, 1, 1)
     plt.plot(log_interest_series.index, log_interest_series, color = 'blue')
-    plt.title(f'Log-Transformed Google Trends Data with Outliers Handled')
+    plt.title(f'Log-Transformed Google Trends Data with Outliers Handled for search word {keyword}')
     plt.xlabel('Date')
     plt.ylabel('Log Returns')
 
     # Second subplot: Log-Transformed Traded Volume Data
     plt.subplot(2, 1, 2)
     plt.plot(log_volume_series.index, log_volume_series, color = 'red')
-    plt.title(f'Log-Transformed Traded Volume Data')
+    plt.title(f'Log-Transformed Traded Volume Data for stock {symbol}')
     plt.xlabel('Date')
     plt.ylabel('Log Returns')
 
     # Show the combined plot
     plt.tight_layout()
     plt.show()
-
-    # Verify date ranges
-    print(f"log_volume_series dates: {log_volume_series.index.min()} to {log_volume_series.index.max()}")
-    print(f"log_interest_series dates: {log_interest_series.index.min()} to {log_interest_series.index.max()}")
 
     # Split data into training and testing sets
     log_volume_train, log_volume_test, log_interest_train, log_interest_test = split_data(log_volume_series, log_interest_series, train_size=0.8)

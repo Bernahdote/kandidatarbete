@@ -107,13 +107,9 @@ def fetch_google_trends_data(keyword, folder, trading_dates, start_date1, end_da
     # Perform the ADF test
     print("Performing ADF test on log-transformed Google Trends series:")
     result = adfuller(log_interest_series_clean)
-    print(f"ADF Statistic: {result[0]}")
     print(f"p-value: {result[1]}")
-    for key, value in result[4].items():
-        print(f"Critical Value {key}: {value}")
-
     if result[1] < 0.05:
-        print("The time series is stationary (reject the null hypothesis).")
+        print("The Google Trends series is stationary (reject the null hypothesis).")
     else:
         print("The time series is not stationary (fail to reject the null hypothesis).")
 
