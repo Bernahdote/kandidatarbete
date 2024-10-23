@@ -19,17 +19,17 @@ warnings.filterwarnings("ignore")
 weekly = False  # Set this to True for weekly, False for daily
 
 symbol = 'BTC-USD'
-start_date1 = '2023-03-23'
+start_date1 = '2023-05-23'
 end_date1 = '2023-11-23'
 start_date2 = '2023-11-17'
-end_date2 = '2024-07-17'
+end_date2 = '2024-05-17'
 
 keyword = 'buybitcoin'
 
 # Define the ranges for p, q, and x_order
-p = range(0, 3)  # AR order
-q = range(0, 3)  # MA order
-x_order_range = range(1, 3)  # Exogenous variable lags
+p = range(0, 7)  # AR order
+q = range(0, 7)  # MA order
+x_order_range = range(1, 7)  # Exogenous variable lags
 
 def split_data(y, X, train_size=0.8):
     """Splits y and X into aligned train and test sets over the union of their indexes."""
@@ -183,6 +183,7 @@ def perform_ljung_box_test(residuals, lags=20):
     else:
         print("Residuals are not autocorrelated (fail to reject null hypothesis).")
     print()
+
 
 # Define fit_arma_model function
 def fit_arma_model(y, ar_order, ma_order):
