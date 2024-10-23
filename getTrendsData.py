@@ -14,7 +14,7 @@ def detect_and_handle_outliers(series, method="zscore", threshold=3):
         return series[filtered_entries]
     
 
-def fetch_google_trends_data(keyword, folder, trading_dates, start_date1, end_date1, start_date2, end_date2, weekly=False, plot=False):
+def fetch_google_trends_data(keyword, folder, trading_dates, start_date1, end_date1, start_date2, end_date2, plot=False):
     """
     Fetches Google Trends data from CSV files for two intervals, normalizes them using median,
     applies log-transform, performs ADF test, and handles outliers.

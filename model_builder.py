@@ -1,12 +1,9 @@
 # Import necessary libraries
-import os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from statsmodels.tsa.stattools import adfuller, acf, pacf, q_stat
 import statsmodels.api as sm
 from statsmodels.stats.stattools import jarque_bera
-from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 import warnings
 import itertools
 from sklearn.metrics import mean_squared_error
@@ -16,15 +13,14 @@ from scipy import stats
 
 warnings.filterwarnings("ignore")
 
-weekly = False  # Set this to True for weekly, False for daily
-
-symbol = 'BTC-USD'
-start_date1 = '2023-05-23'
+symbol = 'CAKE-USD'
+start_date1 = '2023-03-23'
 end_date1 = '2023-11-23'
 start_date2 = '2023-11-17'
 end_date2 = '2024-05-17'
 
-keyword = 'buybitcoin'
+keyword = 'pancakeswap'
+folder = 'PANCAKE SWAP'
 
 # Define the ranges for p, q, and x_order
 p = range(0, 7)  # AR order
@@ -49,18 +45,15 @@ def split_data(y, X, train_size=0.8):
 
     return y_train, y_test, X_train, X_test
 
-def perform_adfuller_test(series, series_name):
-    print(f"Performing ADF test on {series_name}:")
+""" def perform_adfuller_test(series, series_name):
     result = adfuller(series.dropna())
-    print(f"ADF Statistic: {result[0]}")
-    print(f"p-value: {result[1]}")
-    for key, value in result[4].items():
-        print(f"Critical Value {key}: {value}")
+    #print(f"ADF Statistic: {result[0]}")
+    #print(f"p-value: {result[1]}")
     if result[1] < 0.05:
         print("The time series is stationary (reject the null hypothesis).")
     else:
         print("The time series is non-stationary (fail to reject the null hypothesis).")
-    print()
+    print() """
 
 # Fit ARMAX model
 def fit_armax_model(y, X, ar_order, ma_order, x_order):
@@ -87,7 +80,6 @@ def fit_armax_model(y, X, ar_order, ma_order, x_order):
         # Allow models with at most two insignificant parameters (p-value >= 0.05)
         num_insignificant = (p_values >= 0.05).sum()
         if num_insignificant > 2:
-            print(f"Model with AR={ar_order}, MA={ma_order}, X_lags={x_order} has more than two insignificant parameters.")
             return None, None
     except Exception as e:
         # If the model fails to converge, return None for result
@@ -174,9 +166,6 @@ def perform_ljung_box_test(residuals, lags=20):
     lb_test = sm.stats.acorr_ljungbox(residuals, lags=[lags], return_df=True)
     lb_stat = lb_test['lb_stat'].values[-1]  # Extract the test statistic
     lb_pvalue = lb_test['lb_pvalue'].values[-1]  # Extract the p-value
-
-    print(f"Ljung-Box test for autocorrelation at lag {lags}:")
-    print(f"Test Statistic: {lb_stat}, p-value: {lb_pvalue}")
     
     if lb_pvalue < 0.05:
         print("Residuals are autocorrelated (reject null hypothesis).")
@@ -229,28 +218,38 @@ def compute_arma_rmse(result, y_train, y_test, ar_order, ma_order):
 if __name__ == '__main__':
 
     # Fetch stock and trends data
-    log_volume_series, trading_dates = fetch_stock_data(symbol, start_date1, end_date2, weekly=weekly)
-    log_interest_series = fetch_google_trends_data(keyword, trading_dates, start_date1, end_date1, start_date2, end_date2, weekly=weekly, plot=True)
+    log_volume_series, trading_dates = fetch_stock_data(symbol, start_date1, end_date2)
+    log_interest_series = fetch_google_trends_data(keyword, folder, trading_dates, start_date1, end_date1, start_date2, end_date2, plot=True)
 
     # Verify date ranges
     print(f"log_volume_series dates: {log_volume_series.index.min()} to {log_volume_series.index.max()}")
     print(f"log_interest_series dates: {log_interest_series.index.min()} to {log_interest_series.index.max()}")
 
-    # Plot the interest series over the entire date range
     plt.figure(figsize=(12, 6))
-    plt.plot(log_interest_series.index, log_interest_series, label='Google Trends Interest')
-    plt.title(f"Google Trends Interest for '{keyword}'")
+
+    # First subplot: Log-Transformed Google Trends Data
+    plt.subplot(2, 1, 1)
+    plt.plot(log_interest_series.index, log_interest_series)
+    plt.title(f'Log-Transformed Google Trends Data with Outliers Handled')
     plt.xlabel('Date')
-    plt.ylabel('Log Interest')
-    plt.legend()
+    plt.ylabel('Log Returns')
+
+    # Second subplot: Log-Transformed Traded Volume Data
+    plt.subplot(2, 1, 2)
+    plt.plot(log_volume_series.index, log_volume_series)
+    plt.title(f'Log-Transformed Traded Volume Data')
+    plt.xlabel('Date')
+    plt.ylabel('Log Returns')
+
+    # Show the combined plot
+    plt.tight_layout()
     plt.show()
-    plt.close()
 
     # Split data into training and testing sets
     log_volume_train, log_volume_test, log_interest_train, log_interest_test = split_data(log_volume_series, log_interest_series, train_size=0.8)
 
     # Perform ADF test on the exogenous variable
-    perform_adfuller_test(log_interest_train, "log-transformed Google Trends series")
+    #perform_adfuller_test(log_interest_train, "log-transformed Google Trends series")
 
     # Create combinations of p, q, and x_order
     pdq = list(itertools.product(p, q))
@@ -267,7 +266,6 @@ if __name__ == '__main__':
     print("Starting grid search over p, q, and x_order allowing up to two insignificant parameters...")
     for order in pdq:
         for x_order in x_orders:
-            print(f"Trying AR={order[0]}, MA={order[1]}, X_lags={x_order}")
             result, exog_columns = fit_armax_model(log_volume_train, log_interest_train, order[0], order[1], x_order)
             if result is not None:
                 rmse = compute_armax_rmse(result, log_volume_train, log_interest_train, log_volume_test, log_interest_test, order[0], order[1], x_order, exog_columns)
@@ -356,8 +354,8 @@ if __name__ == '__main__':
         upper_bounds_series = combined.iloc[:, 3]
 
         # Calculate Mean Squared Error
-        mse = mean_squared_error(actual_test_aligned, predictions_series, squared=False)
-        print(f"Root Mean Squared Error (RMSE) on the test set for ARMAX model: {mse}")
+        rmse = mean_squared_error(actual_test_aligned, predictions_series, squared=False)
+        print(f"Root Mean Squared Error (RMSE) on the test set for ARMAX model: {rmse}")
 
         # Calculate correct rise/fall predictions
         actual_changes = actual_test_aligned.diff().dropna()
@@ -451,7 +449,7 @@ if __name__ == '__main__':
         mse_arma = mean_squared_error(actual_test_aligned_arma, predictions_series_arma, squared=False)
 
         print(f"Root Mean Squared Error (RMSE) on the test set for ARMA model: {mse_arma}")
-        print(f"The ARMAX model is {mse_arma / mse} times better than the ARMA model based on RMSE")
+        print(f"The ARMAX model is {mse_arma / rmse} times better than the ARMA model based on RMSE")
 
         # Calculate correct rise/fall predictions
         actual_changes_arma = actual_test_aligned_arma.diff().dropna()
