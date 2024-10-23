@@ -19,10 +19,10 @@ warnings.filterwarnings("ignore")
 weekly = False  # Set this to True for weekly, False for daily
 
 symbol = 'BTC-USD'
-start_date1 = '2023-05-23'
+start_date1 = '2023-03-23'
 end_date1 = '2023-11-23'
 start_date2 = '2023-11-17'
-end_date2 = '2024-05-17'
+end_date2 = '2024-07-17'
 
 keyword = 'buybitcoin'
 
@@ -183,7 +183,6 @@ def perform_ljung_box_test(residuals, lags=20):
     else:
         print("Residuals are not autocorrelated (fail to reject null hypothesis).")
     print()
-
 
 # Define fit_arma_model function
 def fit_arma_model(y, ar_order, ma_order):
