@@ -13,14 +13,14 @@ from scipy import stats
 
 warnings.filterwarnings("ignore")
 
-symbol = 'CAKE-USD'
+symbol = 'BTC-USD'
 start_date1 = '2023-03-23'
 end_date1 = '2023-11-23'
 start_date2 = '2023-11-17'
-end_date2 = '2024-05-17'
+end_date2 = '2024-07-17'
 
-keyword = 'pancakeswap'
-folder = 'PANCAKE SWAP'
+keyword = 'bitcoin'
+folder = 'BITCOIN'
 
 # Define the ranges for p, q, and x_order
 p = range(0, 7)  # AR order
@@ -120,12 +120,31 @@ def compute_armax_rmse(result, y_train, X_train, y_test, X_test, ar_order, ma_or
         forecast = result.get_forecast(steps=len(y_test_aligned), exog=exog_test_lags)
         pred_mean = forecast.predicted_mean
         # Compute RMSE
-        rmse = mean_squared_error(y_test_aligned, pred_mean, squared=False)
+        rmse_armax= mean_squared_error(y_test_aligned, pred_mean, squared=False)
     except Exception as e:
         print(f"Failed to compute forecast for ARMAX model with AR={ar_order}, MA={ma_order}, X_lags={x_order}: {e}")
-        rmse = np.inf
+        rmse_armax= np.inf
 
-    return rmse
+    return rmse_armax
+
+def compute_arma_rmse(result, y_train, y_test, ar_order, ma_order):
+    """Compute RMSE on test data for the given ARMA model."""
+    # Use the model to forecast on the test data
+    y_test_aligned = y_test.dropna()
+    if y_test_aligned.empty:
+        print(f"Insufficient data to compute RMSE for AR={ar_order}, MA={ma_order}")
+        return np.inf
+
+    try:
+        forecast = result.get_forecast(steps=len(y_test_aligned))
+        pred_mean = forecast.predicted_mean
+        # Compute RMSE
+        rmse_arma= mean_squared_error(y_test_aligned, pred_mean, squared=False)
+    except Exception as e:
+        print(f"Failed to compute forecast for ARMA model with AR={ar_order}, MA={ma_order}: {e}")
+        rmse_arma= np.inf
+
+    return rmse_arma
 
 # Perform Jarque-Bera test
 def perform_jarque_bera_test(residuals, model_name):
@@ -196,24 +215,6 @@ def fit_arma_model(y, ar_order, ma_order):
 
     return result
 
-def compute_arma_rmse(result, y_train, y_test, ar_order, ma_order):
-    """Compute RMSE on test data for the given ARMA model."""
-    # Use the model to forecast on the test data
-    y_test_aligned = y_test.dropna()
-    if y_test_aligned.empty:
-        print(f"Insufficient data to compute RMSE for AR={ar_order}, MA={ma_order}")
-        return np.inf
-
-    try:
-        forecast = result.get_forecast(steps=len(y_test_aligned))
-        pred_mean = forecast.predicted_mean
-        # Compute RMSE
-        rmse = mean_squared_error(y_test_aligned, pred_mean, squared=False)
-    except Exception as e:
-        print(f"Failed to compute forecast for ARMA model with AR={ar_order}, MA={ma_order}: {e}")
-        rmse = np.inf
-
-    return rmse
 
 if __name__ == '__main__':
 
@@ -256,7 +257,8 @@ if __name__ == '__main__':
     x_orders = list(x_order_range)
 
     # Initialize variables to store the best model
-    best_rmse = np.inf
+    best_rmse_arma= np.inf
+    best_rmse_armax = np.inf
     best_order = None
     best_x_order = None
     best_result = None
@@ -268,10 +270,10 @@ if __name__ == '__main__':
         for x_order in x_orders:
             result, exog_columns = fit_armax_model(log_volume_train, log_interest_train, order[0], order[1], x_order)
             if result is not None:
-                rmse = compute_armax_rmse(result, log_volume_train, log_interest_train, log_volume_test, log_interest_test, order[0], order[1], x_order, exog_columns)
-                print(f"RMSE for AR={order[0]}, MA={order[1]}, X_lags={x_order}: {rmse}")
-                if rmse < best_rmse:
-                    best_rmse = rmse
+                rmse_armax= compute_armax_rmse(result, log_volume_train, log_interest_train, log_volume_test, log_interest_test, order[0], order[1], x_order, exog_columns)
+                print(f"RMSE for AR={order[0]}, MA={order[1]}, X_lags={x_order}: {rmse_armax}")
+                if rmse_armax < best_rmse_armax:
+                    best_rmse_armax = rmse_armax
                     best_order = order
                     best_x_order = x_order
                     best_result = result
@@ -279,7 +281,7 @@ if __name__ == '__main__':
 
     # Check if a best model was found
     if best_result is not None:
-        print(f"\nBest ARMAX model found: AR={best_order[0]}, MA={best_order[1]}, X_lags={best_x_order} with RMSE={best_rmse}")
+        print(f"\nBest ARMAX model found: AR={best_order[0]}, MA={best_order[1]}, X_lags={best_x_order} with RMSE={best_rmse_armax}")
         print(best_result.summary())
 
         # Perform residual analysis
@@ -354,18 +356,18 @@ if __name__ == '__main__':
         upper_bounds_series = combined.iloc[:, 3]
 
         # Calculate Mean Squared Error
-        rmse = mean_squared_error(actual_test_aligned, predictions_series, squared=False)
-        print(f"Root Mean Squared Error (RMSE) on the test set for ARMAX model: {rmse}")
+        rmse_armax= mean_squared_error(actual_test_aligned, predictions_series, squared=False)
+        print(f"Root Mean Squared Error (RMSE) on the test set for ARMAX model: {rmse_armax}")
 
         # Calculate correct rise/fall predictions
         actual_changes = actual_test_aligned.diff().dropna()
         predicted_changes = predictions_series.diff().dropna()
 
-        correct_predictions = (np.sign(actual_changes) == np.sign(predicted_changes)).sum()
-        total_predictions = len(predicted_changes)
-        accuracy = correct_predictions / total_predictions * 100
+        correct_predictions_armax = (np.sign(actual_changes) == np.sign(predicted_changes)).sum()
+        total_predictions_armax = len(predicted_changes)
+        accuracy = correct_predictions_armax / total_predictions_armax * 100
 
-        print(f"Correct Rise/Fall Predictions for ARMAX model: {correct_predictions}/{total_predictions}")
+        print(f"Correct Rise/Fall Predictions for ARMAX model: {correct_predictions_armax}/{total_predictions_armax}")
         print(f"Accuracy of predicting rise/fall for ARMAX model: {accuracy:.2f}%")
     else:
         print("No suitable ARMAX model was found during grid search.")
@@ -446,10 +448,10 @@ if __name__ == '__main__':
         upper_bounds_series_arma = combined_arma.iloc[:, 3]
 
         # Calculate Mean Squared Error
-        mse_arma = mean_squared_error(actual_test_aligned_arma, predictions_series_arma, squared=False)
+        rmse_arma = mean_squared_error(actual_test_aligned_arma, predictions_series_arma, squared=False)
 
-        print(f"Root Mean Squared Error (RMSE) on the test set for ARMA model: {mse_arma}")
-        print(f"The ARMAX model is {mse_arma / rmse} times better than the ARMA model based on RMSE")
+        print(f"Root Mean Squared Error (RMSE) on the test set for ARMA model: {rmse_arma}")
+        print(f"The ARMAX model is {rmse_armax / rmse_arma} times better than the ARMA model based on RMSE")
 
         # Calculate correct rise/fall predictions
         actual_changes_arma = actual_test_aligned_arma.diff().dropna()
