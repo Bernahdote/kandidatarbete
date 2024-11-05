@@ -13,7 +13,7 @@ from scipy import stats
 
 warnings.filterwarnings("ignore")
 
-symbol = 'BTC-USD'
+symbol = 'DOT-USD'
 start_date1 = '2023-03-23'
 end_date1 = '2023-11-23'
 start_date2 = '2023-11-17'
@@ -231,14 +231,14 @@ if __name__ == '__main__':
     # First subplot: Log-Transformed Google Trends Data
     plt.subplot(2, 1, 1)
     plt.plot(log_interest_series.index, log_interest_series)
-    plt.title(f'Log-Transformed Google Trends Data with Outliers Handled')
+    plt.title(f'Log-returns transformed Google trends data with outliers handled for search word {keyword}')
     plt.xlabel('Date')
     plt.ylabel('Log Returns')
 
     # Second subplot: Log-Transformed Traded Volume Data
     plt.subplot(2, 1, 2)
-    plt.plot(log_volume_series.index, log_volume_series)
-    plt.title(f'Log-Transformed Traded Volume Data')
+    plt.plot(log_volume_series.index, log_volume_series, color = 'red')
+    plt.title(f'Log-returns transformed traded volume data for stock {symbol}')
     plt.xlabel('Date')
     plt.ylabel('Log Returns')
 
