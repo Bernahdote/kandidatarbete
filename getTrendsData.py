@@ -98,15 +98,18 @@ def fetch_google_trends_data(keyword, folder, trading_dates, start_date1, end_da
 
     # Calculate log returns
     interest_series = combined_data['Interest']
+    interest_series = interest_series/interest_series.shift(1) 
+    interest_series = interest_series.dropna()
     log_interest_series = np.log(interest_series / interest_series.shift(1))
     log_interest_series = log_interest_series.dropna()
 
     # Detect and handle outliers
     log_interest_series_clean = detect_and_handle_outliers(log_interest_series, method="zscore", threshold=3)
+    interest_series_clean = detect_and_handle_outliers(interest_series, method="zscore", threshold=3)
 
     # Perform the ADF test
     print("Performing ADF test on log-transformed Google Trends series:")
-    result = adfuller(log_interest_series_clean)
+    result = adfuller(interest_series_clean)
     print(f"p-value: {result[1]}")
     if result[1] < 0.05:
         print("The Google Trends series is stationary (reject the null hypothesis).")
@@ -133,4 +136,4 @@ def fetch_google_trends_data(keyword, folder, trading_dates, start_date1, end_da
     #plt.close()
 
 
-    return log_interest_series_clean
+    return interest_series_clean

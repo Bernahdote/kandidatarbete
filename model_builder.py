@@ -13,14 +13,14 @@ from scipy import stats
 
 warnings.filterwarnings("ignore")
 
-symbol = 'DOT-USD'
+symbol = 'BTC-USD'
 start_date1 = '2023-03-23'
 end_date1 = '2023-11-23'
 start_date2 = '2023-11-17'
 end_date2 = '2024-07-17'
 
 keyword = 'bitcoin'
-folder = 'BITCOIN'
+folder = './'
 
 # Define the ranges for p, q, and x_order
 p = range(0, 7)  # AR order
@@ -231,7 +231,7 @@ if __name__ == '__main__':
     # First subplot: Log-Transformed Google Trends Data
     plt.subplot(2, 1, 1)
     plt.plot(log_interest_series.index, log_interest_series)
-    plt.title(f'Log-returns transformed Google trends data with outliers handled for search word {keyword}')
+    plt.title(f'Returns transformed Google trends data with outliers handled for search word {keyword}')
     plt.xlabel('Date')
     plt.ylabel('Log Returns')
 
@@ -287,7 +287,7 @@ if __name__ == '__main__':
         # Perform residual analysis
         residuals = best_result.resid
         perform_jarque_bera_test(residuals, "Best ARMAX Model")
-        plot_residuals(residuals, "Best ARMAX Model")
+        #plot_residuals(residuals, "Best ARMAX Model")
         perform_ljung_box_test(residuals)
 
         # Rolling forecast with confidence intervals
@@ -356,8 +356,8 @@ if __name__ == '__main__':
         upper_bounds_series = combined.iloc[:, 3]
 
         # Calculate Mean Squared Error
-        rmse_armax= mean_squared_error(actual_test_aligned, predictions_series, squared=False)
-        print(f"Root Mean Squared Error (RMSE) on the test set for ARMAX model: {rmse_armax}")
+        rmse_armax_test= mean_squared_error(actual_test_aligned, predictions_series, squared=False)
+        print(f"Root Mean Squared Error (RMSE) on the test set for ARMAX model: {rmse_armax_test}")
 
         # Calculate correct rise/fall predictions
         actual_changes = actual_test_aligned.diff().dropna()
@@ -404,7 +404,7 @@ if __name__ == '__main__':
         # Perform residual analysis
         residuals_arma = best_result_arma.resid
         perform_jarque_bera_test(residuals_arma, "Best ARMA Model")
-        plot_residuals(residuals_arma, "Best ARMA Model")
+        #plot_residuals(residuals_arma, "Best ARMA Model")
         perform_ljung_box_test(residuals_arma)
 
         # Rolling forecast with confidence intervals for ARMA model
@@ -448,10 +448,10 @@ if __name__ == '__main__':
         upper_bounds_series_arma = combined_arma.iloc[:, 3]
 
         # Calculate Mean Squared Error
-        rmse_arma = mean_squared_error(actual_test_aligned_arma, predictions_series_arma, squared=False)
+        rmse_arma_test = mean_squared_error(actual_test_aligned_arma, predictions_series_arma, squared=False)
 
-        print(f"Root Mean Squared Error (RMSE) on the test set for ARMA model: {rmse_arma}")
-        print(f"The ARMAX model is {rmse_armax / rmse_arma} times better than the ARMA model based on RMSE")
+        print(f"Root Mean Squared Error (RMSE) on the test set for ARMA model: {rmse_arma_test}")
+        print(f"The ARMAX model is {rmse_arma_test/rmse_armax_test} times better than the ARMA model based on RMSE")
 
         # Calculate correct rise/fall predictions
         actual_changes_arma = actual_test_aligned_arma.diff().dropna()
@@ -486,6 +486,7 @@ if __name__ == '__main__':
         plt.title(f"Rolling Forecast: ARMAX and ARMA Predictions VS Actual Traded Volume for {symbol}")
         plt.xlabel('Date')
         plt.ylabel('Volume')
+        plt.legend(loc='upper right')
         plt.legend()
         plt.show()
         plt.close()
