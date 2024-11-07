@@ -13,13 +13,13 @@ from scipy import stats
 
 warnings.filterwarnings("ignore")
 
-symbol = 'ETH-USD'
+symbol = 'DOT-USD'
 start_date1 = '2023-03-23'
 end_date1 = '2023-11-23'
 start_date2 = '2023-11-17'
 end_date2 = '2024-07-17'
 
-keyword = 'ethereum'
+keyword = 'polkadot'
 folder = './'
 
 # Define the ranges for p, q, and x_order
@@ -85,62 +85,6 @@ def prepare_exog_lags(X, x_order):
     X_lags.columns = [f'X_lag_{i}' for i in range(1, x_order + 1)]
     return X_lags
 
-def compute_armax_rmse(result, y_train, X_train, y_test, X_test, ar_order, ma_order, x_order, exog_columns):
-    """Compute RMSE on test data for the given ARMAX model."""
-    # Combine training and test exogenous data
-    X_full = pd.concat([X_train, X_test])
-    y_full = pd.concat([y_train, y_test])
-
-    # Prepare lagged exogenous variables
-    X_lags_full = pd.concat([X_full.shift(i) for i in range(1, x_order + 1)], axis=1)
-    X_lags_full.columns = [f'X_lag_{i}' for i in range(1, x_order + 1)]
-    X_lags_full = sm.add_constant(X_lags_full)
-    X_lags_full = X_lags_full[exog_columns]
-
-    # Get exogenous variables for test data
-    exog_test_lags = X_lags_full.loc[y_test.index].dropna()
-    y_test_aligned = y_test.loc[exog_test_lags.index]
-
-    if exog_test_lags.empty or y_test_aligned.empty:
-        print(f"Insufficient data to compute RMSE for AR={ar_order}, MA={ma_order}, X_lags={x_order}")
-        return np.inf
-
-    # Use the model to forecast on the test data
-    try:
-        forecast = result.get_forecast(steps=len(y_test_aligned), exog=exog_test_lags)
-        pred_mean = forecast.predicted_mean
-        # Compute RMSE
-        rmse_armax= mean_squared_error(y_test_aligned, pred_mean, squared=False)
-    except Exception as e:
-        print(f"Failed to compute forecast for ARMAX model with AR={ar_order}, MA={ma_order}, X_lags={x_order}: {e}")
-        rmse_armax= np.inf
-
-    return rmse_armax
-
-def compute_arma_rmse(result, y_train, y_test, ar_order, ma_order):
-    """Compute RMSE on test data for the given ARMA model."""
-    # Use the model to forecast on the test data
-    y_test_aligned = y_test.dropna()
-    if y_test_aligned.empty:
-        print(f"Insufficient data to compute RMSE for AR={ar_order}, MA={ma_order}")
-        return np.inf
-
-    try:
-        forecast = result.get_forecast(steps=len(y_test_aligned))
-        pred_mean = forecast.predicted_mean
-        # Compute RMSE
-        rmse_arma= mean_squared_error(y_test_aligned, pred_mean, squared=False)
-    except Exception as e:
-        print(f"Failed to compute forecast for ARMA model with AR={ar_order}, MA={ma_order}: {e}")
-        rmse_arma= np.inf
-
-    return rmse_arma
-
-# Perform Jarque-Bera test
-def perform_jarque_bera_test(residuals, model_name):
-    jb_stat, jb_pvalue, skew, kurtosis = jarque_bera(residuals.dropna())
-    print(f"Jarque-Bera test p-value for {model_name} model residuals: {jb_pvalue}")
-
 def plot_residuals(residuals, model_name):
     """Plot residuals, histogram, and Q-Q plot."""
     residuals = residuals.dropna()
@@ -169,19 +113,6 @@ def plot_residuals(residuals, model_name):
     plt.show()
     plt.close()
 
-def perform_ljung_box_test(residuals, lags=20):
-    """Perform Ljung-Box test for autocorrelation."""
-    # Return as a DataFrame to ensure correct data types for further checks
-    lb_test = sm.stats.acorr_ljungbox(residuals, lags=[lags], return_df=True)
-    lb_stat = lb_test['lb_stat'].values[-1]  # Extract the test statistic
-    lb_pvalue = lb_test['lb_pvalue'].values[-1]  # Extract the p-value
-    
-    if lb_pvalue < 0.05:
-        print("Residuals are autocorrelated (reject null hypothesis).")
-    else:
-        print("Residuals are not autocorrelated (fail to reject null hypothesis).")
-    print()
-
 # Define fit_arma_model function
 def fit_arma_model(y, ar_order, ma_order):
     """Fit ARMA model using SARIMAX without exogenous variables."""
@@ -195,11 +126,9 @@ def fit_arma_model(y, ar_order, ma_order):
         # Allow models with at most two insignificant parameters (p-value >= 0.05)
         num_insignificant = (p_values >= 0.05).sum()
         if num_insignificant > 2:
-            print(f"Model with AR={ar_order}, MA={ma_order} has more than two insignificant parameters.")
             return None
     except Exception as e:
         # If the model fails to converge, return None for result
-        print(f"Failed to fit model with AR={ar_order}, MA={ma_order}: {e}")
         result = None
 
     return result
@@ -210,23 +139,19 @@ if __name__ == '__main__':
     log_volume_series, trading_dates = fetch_stock_data(symbol, start_date1, end_date2)
     log_interest_series = fetch_google_trends_data(keyword, folder, trading_dates, start_date1, end_date1, start_date2, end_date2, plot=True)
 
-    # Verify date ranges
-    print(f"log_volume_series dates: {log_volume_series.index.min()} to {log_volume_series.index.max()}")
-    print(f"log_interest_series dates: {log_interest_series.index.min()} to {log_interest_series.index.max()}")
-
     plt.figure(figsize=(12, 6))
 
     # First subplot: Log-Transformed Google Trends Data
     plt.subplot(2, 1, 1)
     plt.plot(log_interest_series.index, log_interest_series)
-    plt.title(f'Returns transformed Google trends data with outliers handled for search word {keyword}')
+    plt.title(f'Google trends data for search word {keyword}')
     plt.xlabel('Date')
-    plt.ylabel('Log Returns')
+    plt.ylabel('Percentual change')
 
     # Second subplot: Log-Transformed Traded Volume Data
     plt.subplot(2, 1, 2)
     plt.plot(log_volume_series.index, log_volume_series, color = 'red')
-    plt.title(f'Log-returns transformed traded volume data for stock {symbol}')
+    plt.title(f'Log-transformed traded volume data for stock {symbol}')
     plt.xlabel('Date')
     plt.ylabel('Log Returns')
 
@@ -249,13 +174,11 @@ if __name__ == '__main__':
     best_exog_columns = None
 
     # Grid search over p, q, and x_order based on AIC
-    print("Starting grid search over p, q, and x_order based on AIC...")
     for order in pdq:
         for x_order in x_orders:
             result, exog_columns = fit_armax_model(log_volume_train, log_interest_train, order[0], order[1], x_order)
             if result is not None:
                 aic_armax = result.aic
-                print(f"AIC for AR={order[0]}, MA={order[1]}, X_lags={x_order}: {aic_armax}")
                 if aic_armax < best_aic_armax:
                     best_aic_armax = aic_armax
                     best_order = order
@@ -268,15 +191,10 @@ if __name__ == '__main__':
         print(f"\nBest ARMAX model found: AR={best_order[0]}, MA={best_order[1]}, X_lags={best_x_order} with AIC={best_aic_armax}")
         print(best_result.summary())
 
-        # Compute RMSE for the best model on test data
-        best_rmse_armax = compute_armax_rmse(best_result, log_volume_train, log_interest_train, log_volume_test, log_interest_test, best_order[0], best_order[1], best_x_order, best_exog_columns)
-        print(f"RMSE of the best ARMAX model on test data: {best_rmse_armax}")
 
         # Perform residual analysis
         residuals = best_result.resid
-        perform_jarque_bera_test(residuals, "Best ARMAX Model")
         plot_residuals(residuals, "Best ARMAX Model")
-        perform_ljung_box_test(residuals)
 
         # Rolling forecast with confidence intervals
         predictions = []
@@ -343,9 +261,6 @@ if __name__ == '__main__':
         lower_bounds_series = combined.iloc[:, 2]
         upper_bounds_series = combined.iloc[:, 3]
 
-        # Calculate RMSE on test data
-        rmse_armax_test = mean_squared_error(actual_test_aligned, predictions_series, squared=False)
-        print(f"Root Mean Squared Error (RMSE) on the test set for ARMAX model: {rmse_armax_test}")
 
         # Calculate correct rise/fall predictions
         actual_changes = actual_test_aligned.diff().dropna()
@@ -372,13 +287,10 @@ if __name__ == '__main__':
     best_result_arma = None
 
     # Grid search over p and q for ARMA model based on AIC
-    print("\nStarting grid search over p and q for ARMA model based on AIC...")
     for order in pdq:
-        print(f"Trying AR={order[0]}, MA={order[1]}")
         result_arma = fit_arma_model(log_volume_train, order[0], order[1])
         if result_arma is not None:
             aic_arma = result_arma.aic
-            print(f"AIC for AR={order[0]}, MA={order[1]}: {aic_arma}")
             if aic_arma < best_aic_arma:
                 best_aic_arma = aic_arma
                 best_order_arma = order
@@ -389,14 +301,9 @@ if __name__ == '__main__':
         print(f"\nBest ARMA model found: AR={best_order_arma[0]}, MA={best_order_arma[1]} with AIC={best_aic_arma}")
         print(best_result_arma.summary())
 
-        # Compute RMSE for the best ARMA model on test data
-        best_rmse_arma = compute_arma_rmse(best_result_arma, log_volume_train, log_volume_test, best_order_arma[0], best_order_arma[1])
-        print(f"RMSE of the best ARMA model on test data: {best_rmse_arma}")
 
         # Perform residual analysis
         residuals_arma = best_result_arma.resid
-        perform_jarque_bera_test(residuals_arma, "Best ARMA Model")
-        perform_ljung_box_test(residuals_arma)
 
         # Rolling forecast with confidence intervals for ARMA model
         predictions_arma = []
@@ -440,7 +347,11 @@ if __name__ == '__main__':
 
         # Calculate RMSE on test data
         rmse_arma_test = mean_squared_error(actual_test_aligned_arma, predictions_series_arma, squared=False)
+        rmse_armax_test = mean_squared_error(actual_test_aligned, predictions_series, squared=False)
+
+        print(f"Root Mean Squared Error (RMSE) on the test set for ARMAX model: {rmse_armax_test}")
         print(f"Root Mean Squared Error (RMSE) on the test set for ARMA model: {rmse_arma_test}")
+
         print(f"The ARMAX model is {rmse_arma_test/rmse_armax_test} times better than the ARMA model based on RMSE")
 
         # Calculate correct rise/fall predictions

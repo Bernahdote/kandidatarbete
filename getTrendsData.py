@@ -71,7 +71,6 @@ def fetch_google_trends_data(keyword, folder, trading_dates, start_date1, end_da
     combined_data = combined_data[~combined_data.index.duplicated(keep='first')]
     combined_data.sort_index(inplace=True)
 
-    print(f"Combined data before reindexing: {len(combined_data)} entries")
 
 
     # Ensure trading_dates are in datetime format
@@ -87,7 +86,6 @@ def fetch_google_trends_data(keyword, folder, trading_dates, start_date1, end_da
     # Interpolate missing 'Interest' values
     combined_data['Interest'].interpolate(method='time', inplace=True)
 
-    print(f"Combined data after reindexing: {len(combined_data)} entries")
 
     # Now we can filter to trading_dates if required
     combined_data = combined_data.loc[trading_dates]
@@ -108,7 +106,6 @@ def fetch_google_trends_data(keyword, folder, trading_dates, start_date1, end_da
     interest_series_clean = detect_and_handle_outliers(interest_series, method="zscore", threshold=3)
 
     # Perform the ADF test
-    print("Performing ADF test on log-transformed Google Trends series:")
     result = adfuller(interest_series_clean)
     print(f"p-value: {result[1]}")
     if result[1] < 0.05:
