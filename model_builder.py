@@ -13,13 +13,13 @@ from scipy import stats
 
 warnings.filterwarnings("ignore")
 
-symbol = 'VET-USD'
+symbol = 'ETH-USD'
 start_date1 = '2023-03-23'
 end_date1 = '2023-11-23'
 start_date2 = '2023-11-17'
 end_date2 = '2024-07-17'
 
-keyword = 'vechain'
+keyword = 'ethereum'
 folder = './'
 
 # Define the ranges for p, q, and x_order
@@ -44,16 +44,6 @@ def split_data(y, X, train_size=0.8):
     X_train, X_test = X_aligned.iloc[:train_len], X_aligned.iloc[train_len:]
 
     return y_train, y_test, X_train, X_test
-
-""" def perform_adfuller_test(series, series_name):
-    result = adfuller(series.dropna())
-    #print(f"ADF Statistic: {result[0]}")
-    #print(f"p-value: {result[1]}")
-    if result[1] < 0.05:
-        print("The time series is stationary (reject the null hypothesis).")
-    else:
-        print("The time series is non-stationary (fail to reject the null hypothesis).")
-    print() """
 
 # Fit ARMAX model
 def fit_armax_model(y, X, ar_order, ma_order, x_order):
@@ -192,7 +182,6 @@ def perform_ljung_box_test(residuals, lags=20):
         print("Residuals are not autocorrelated (fail to reject null hypothesis).")
     print()
 
-
 # Define fit_arma_model function
 def fit_arma_model(y, ar_order, ma_order):
     """Fit ARMA model using SARIMAX without exogenous variables."""
@@ -214,7 +203,6 @@ def fit_arma_model(y, ar_order, ma_order):
         result = None
 
     return result
-
 
 if __name__ == '__main__':
 
@@ -249,31 +237,27 @@ if __name__ == '__main__':
     # Split data into training and testing sets
     log_volume_train, log_volume_test, log_interest_train, log_interest_test = split_data(log_volume_series, log_interest_series, train_size=0.8)
 
-    # Perform ADF test on the exogenous variable
-    #perform_adfuller_test(log_interest_train, "log-transformed Google Trends series")
-
     # Create combinations of p, q, and x_order
     pdq = list(itertools.product(p, q))
     x_orders = list(x_order_range)
 
-    # Initialize variables to store the best model
-    best_rmse_arma= np.inf
-    best_rmse_armax = np.inf
+    # Initialize variables to store the best model based on AIC
+    best_aic_armax = np.inf
     best_order = None
     best_x_order = None
     best_result = None
     best_exog_columns = None
 
-    # Grid search over p, q, and x_order
-    print("Starting grid search over p, q, and x_order allowing up to two insignificant parameters...")
+    # Grid search over p, q, and x_order based on AIC
+    print("Starting grid search over p, q, and x_order based on AIC...")
     for order in pdq:
         for x_order in x_orders:
             result, exog_columns = fit_armax_model(log_volume_train, log_interest_train, order[0], order[1], x_order)
             if result is not None:
-                rmse_armax= compute_armax_rmse(result, log_volume_train, log_interest_train, log_volume_test, log_interest_test, order[0], order[1], x_order, exog_columns)
-                print(f"RMSE for AR={order[0]}, MA={order[1]}, X_lags={x_order}: {rmse_armax}")
-                if rmse_armax < best_rmse_armax:
-                    best_rmse_armax = rmse_armax
+                aic_armax = result.aic
+                print(f"AIC for AR={order[0]}, MA={order[1]}, X_lags={x_order}: {aic_armax}")
+                if aic_armax < best_aic_armax:
+                    best_aic_armax = aic_armax
                     best_order = order
                     best_x_order = x_order
                     best_result = result
@@ -281,13 +265,17 @@ if __name__ == '__main__':
 
     # Check if a best model was found
     if best_result is not None:
-        print(f"\nBest ARMAX model found: AR={best_order[0]}, MA={best_order[1]}, X_lags={best_x_order} with RMSE={best_rmse_armax}")
+        print(f"\nBest ARMAX model found: AR={best_order[0]}, MA={best_order[1]}, X_lags={best_x_order} with AIC={best_aic_armax}")
         print(best_result.summary())
+
+        # Compute RMSE for the best model on test data
+        best_rmse_armax = compute_armax_rmse(best_result, log_volume_train, log_interest_train, log_volume_test, log_interest_test, best_order[0], best_order[1], best_x_order, best_exog_columns)
+        print(f"RMSE of the best ARMAX model on test data: {best_rmse_armax}")
 
         # Perform residual analysis
         residuals = best_result.resid
         perform_jarque_bera_test(residuals, "Best ARMAX Model")
-        #plot_residuals(residuals, "Best ARMAX Model")
+        plot_residuals(residuals, "Best ARMAX Model")
         perform_ljung_box_test(residuals)
 
         # Rolling forecast with confidence intervals
@@ -355,8 +343,8 @@ if __name__ == '__main__':
         lower_bounds_series = combined.iloc[:, 2]
         upper_bounds_series = combined.iloc[:, 3]
 
-        # Calculate Mean Squared Error
-        rmse_armax_test= mean_squared_error(actual_test_aligned, predictions_series, squared=False)
+        # Calculate RMSE on test data
+        rmse_armax_test = mean_squared_error(actual_test_aligned, predictions_series, squared=False)
         print(f"Root Mean Squared Error (RMSE) on the test set for ARMAX model: {rmse_armax_test}")
 
         # Calculate correct rise/fall predictions
@@ -378,33 +366,36 @@ if __name__ == '__main__':
     # Create combinations of p and q
     pdq = list(itertools.product(p, q))
 
-    # Initialize variables to store the best ARMA model
-    best_rmse_arma = np.inf
+    # Initialize variables to store the best ARMA model based on AIC
+    best_aic_arma = np.inf
     best_order_arma = None
     best_result_arma = None
 
-    # Grid search over p and q for ARMA model
-    print("\nStarting grid search over p and q for ARMA model allowing up to two insignificant parameters...")
+    # Grid search over p and q for ARMA model based on AIC
+    print("\nStarting grid search over p and q for ARMA model based on AIC...")
     for order in pdq:
         print(f"Trying AR={order[0]}, MA={order[1]}")
         result_arma = fit_arma_model(log_volume_train, order[0], order[1])
         if result_arma is not None:
-            rmse_arma = compute_arma_rmse(result_arma, log_volume_train, log_volume_test, order[0], order[1])
-            print(f"RMSE for AR={order[0]}, MA={order[1]}: {rmse_arma}")
-            if rmse_arma < best_rmse_arma:
-                best_rmse_arma = rmse_arma
+            aic_arma = result_arma.aic
+            print(f"AIC for AR={order[0]}, MA={order[1]}: {aic_arma}")
+            if aic_arma < best_aic_arma:
+                best_aic_arma = aic_arma
                 best_order_arma = order
                 best_result_arma = result_arma
 
     # Check if a best ARMA model was found
     if best_result_arma is not None:
-        print(f"\nBest ARMA model found: AR={best_order_arma[0]}, MA={best_order_arma[1]} with RMSE={best_rmse_arma}")
+        print(f"\nBest ARMA model found: AR={best_order_arma[0]}, MA={best_order_arma[1]} with AIC={best_aic_arma}")
         print(best_result_arma.summary())
+
+        # Compute RMSE for the best ARMA model on test data
+        best_rmse_arma = compute_arma_rmse(best_result_arma, log_volume_train, log_volume_test, best_order_arma[0], best_order_arma[1])
+        print(f"RMSE of the best ARMA model on test data: {best_rmse_arma}")
 
         # Perform residual analysis
         residuals_arma = best_result_arma.resid
         perform_jarque_bera_test(residuals_arma, "Best ARMA Model")
-        #plot_residuals(residuals_arma, "Best ARMA Model")
         perform_ljung_box_test(residuals_arma)
 
         # Rolling forecast with confidence intervals for ARMA model
@@ -447,9 +438,8 @@ if __name__ == '__main__':
         lower_bounds_series_arma = combined_arma.iloc[:, 2]
         upper_bounds_series_arma = combined_arma.iloc[:, 3]
 
-        # Calculate Mean Squared Error
+        # Calculate RMSE on test data
         rmse_arma_test = mean_squared_error(actual_test_aligned_arma, predictions_series_arma, squared=False)
-
         print(f"Root Mean Squared Error (RMSE) on the test set for ARMA model: {rmse_arma_test}")
         print(f"The ARMAX model is {rmse_arma_test/rmse_armax_test} times better than the ARMA model based on RMSE")
 
@@ -475,11 +465,9 @@ if __name__ == '__main__':
         plt.figure(figsize=(12, 6))
         plt.plot(log_volume_test.index, log_volume_test, label='Actual Volume', color='blue')
 
-
         # Plot ARMAX predictions
         plt.plot(predictions_series.index, predictions_series, label='ARMAX Predicted Volume', linestyle='--', color='green')
         plt.fill_between(predictions_series.index, lower_bounds_series, upper_bounds_series, color='green', alpha=0.2, label='ARMAX 95% Confidence Interval')
-
 
         # Plot ARMA predictions
         plt.plot(predictions_series_arma.index, predictions_series_arma, label='ARMA Predicted Volume', linestyle='-.', color='red')
