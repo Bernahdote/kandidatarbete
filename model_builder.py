@@ -13,13 +13,13 @@ from scipy import stats
 
 warnings.filterwarnings("ignore")
 
-symbol = 'BTC-USD'
+symbol = 'VET-USD'
 start_date1 = '2023-03-23'
 end_date1 = '2023-11-23'
 start_date2 = '2023-11-17'
 end_date2 = '2024-07-17'
 
-keyword = 'bitcoin'
+keyword = 'vechain'
 folder = './'
 
 # Define the ranges for p, q, and x_order
@@ -475,19 +475,20 @@ if __name__ == '__main__':
         plt.figure(figsize=(12, 6))
         plt.plot(log_volume_test.index, log_volume_test, label='Actual Volume', color='blue')
 
+
         # Plot ARMAX predictions
         plt.plot(predictions_series.index, predictions_series, label='ARMAX Predicted Volume', linestyle='--', color='green')
         plt.fill_between(predictions_series.index, lower_bounds_series, upper_bounds_series, color='green', alpha=0.2, label='ARMAX 95% Confidence Interval')
 
+
         # Plot ARMA predictions
         plt.plot(predictions_series_arma.index, predictions_series_arma, label='ARMA Predicted Volume', linestyle='-.', color='red')
         plt.fill_between(predictions_series_arma.index, lower_bounds_series_arma, upper_bounds_series_arma, color='red', alpha=0.2, label='ARMA 95% Confidence Interval')
-
+        
+        plt.legend(loc='lower left', fontsize = '8')
         plt.title(f"Rolling Forecast: ARMAX and ARMA Predictions VS Actual Traded Volume for {symbol}")
         plt.xlabel('Date')
         plt.ylabel('Volume')
-        plt.legend(loc='upper right')
-        plt.legend()
         plt.show()
         plt.close()
     else:
