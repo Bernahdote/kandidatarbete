@@ -2,6 +2,7 @@ import yfinance as yf
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.stats import zscore
+from statsmodels.tsa.stattools import adfuller
 
 
 
@@ -11,6 +12,7 @@ def detect_and_handle_outliers(series, threshold=3):
     Points with Z-score greater than the threshold will be considered as outliers.
     Returns the cleaned series.
     """
+
     # Compute Z-scores
     z_scores = zscore(series)
 
@@ -31,16 +33,25 @@ def fetch_stock_data(symbol, start_date, end_date):
     stockData = yf.download(symbol, start=start_date, end=end_date, interval='1d')
 
     # Select the 'Volume' column as a series
-    volume_series = stockData['Volume']
+    original_volume_series = stockData['Volume']
 
     # Log-transform series
     small_value = 1e-5
-    volume_series = volume_series.replace(0, small_value)
-    log_volume_series = np.log(volume_series / volume_series.shift(1))
+    original_volume_series = original_volume_series.replace(0, small_value)
+    log_volume_series = np.log10(original_volume_series / original_volume_series.shift(1))
     log_volume_series = log_volume_series.dropna()
 
     # Detect and handle outliers
     log_volume_series_cleaned = detect_and_handle_outliers(log_volume_series)
 
+     # Perform ADF test
+    result = adfuller(log_volume_series_cleaned)
+    print(f"p-value: {result[1]}")
+    if result[1] < 0.05:
+        print("The Volume series is stationary (reject the null hypothesis).")
+    else:
+        print("The Volume series is not stationary (fail to reject the null hypothesis).")
+    
+
     # Return the cleaned log volume series and the trading dates
-    return log_volume_series_cleaned, stockData.index
+    return original_volume_series, log_volume_series_cleaned, stockData.index, initial_volume

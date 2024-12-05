@@ -98,7 +98,7 @@ def fetch_google_trends_data(keyword, folder, trading_dates, start_date1, end_da
     interest_series = combined_data['Interest']
     interest_series = interest_series/interest_series.shift(1) 
     interest_series = interest_series.dropna()
-    log_interest_series = np.log(interest_series / interest_series.shift(1))
+    log_interest_series = np.log10(interest_series / interest_series.shift(1))
     log_interest_series = log_interest_series.dropna()
 
     # Detect and handle outliers
@@ -133,4 +133,4 @@ def fetch_google_trends_data(keyword, folder, trading_dates, start_date1, end_da
     #plt.close()
 
 
-    return interest_series_clean
+    return log_interest_series_clean

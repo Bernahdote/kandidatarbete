@@ -13,17 +13,17 @@ from scipy import stats
 
 warnings.filterwarnings("ignore")
 
-symbol = 'DOT-USD'
+symbol = 'BTC-USD'
 start_date1 = '2023-03-23'
 end_date1 = '2023-11-23'
 start_date2 = '2023-11-17'
 end_date2 = '2024-07-17'
 
-keyword = 'polkadot'
+keyword = 'bitcoin'
 folder = './'
 
-# Define the ranges for p, q, and x_order
-p = range(0, 7)  # AR order
+# Define the ranges for p, q, and x_order (ALL SHOULD BE 7!)
+p = range(0, 7)  # AR order 
 q = range(0, 7)  # MA order
 x_order_range = range(1, 7)  # Exogenous variable lags
 
@@ -133,10 +133,18 @@ def fit_arma_model(y, ar_order, ma_order):
 
     return result
 
+def reverse_log_returns(log_returns, initial_value):
+    """Reconstruct the original series from log returns."""
+    # Calculate cumulative sum of log returns
+    cumulative_log_returns = np.cumsum(log_returns)
+    # Reconstruct the original series
+    reconstructed_series = initial_value * (10 ** cumulative_log_returns)
+    return reconstructed_series
+
 if __name__ == '__main__':
 
     # Fetch stock and trends data
-    log_volume_series, trading_dates = fetch_stock_data(symbol, start_date1, end_date2)
+    original_volume_series, log_volume_series, trading_dates, initial_value = fetch_stock_data(symbol, start_date1, end_date2)
     log_interest_series = fetch_google_trends_data(keyword, folder, trading_dates, start_date1, end_date1, start_date2, end_date2, plot=True)
 
     plt.figure(figsize=(12, 6))
@@ -301,7 +309,6 @@ if __name__ == '__main__':
         print(f"\nBest ARMA model found: AR={best_order_arma[0]}, MA={best_order_arma[1]} with AIC={best_aic_arma}")
         print(best_result_arma.summary())
 
-
         # Perform residual analysis
         residuals_arma = best_result_arma.resid
 
@@ -364,6 +371,9 @@ if __name__ == '__main__':
 
         print(f"Correct Rise/Fall Predictions for ARMA model: {correct_predictions_arma}/{total_predictions_arma}")
         print(f"Accuracy of predicting rise/fall for ARMA model: {accuracy_arma:.2f}%")
+
+        
+        
     else:
         print("No suitable ARMA model was found during grid search.")
 
@@ -372,17 +382,29 @@ if __name__ == '__main__':
         # Combine training and test data for actual volume
         actual_volume_full = pd.concat([log_volume_train, log_volume_test])
 
+        initial_value_test = initial_value # Last value before the test set
+        actual_reconstructed = reverse_log_returns(log_volume_test, initial_value_test)
+        predictions_reconstructed_armax = reverse_log_returns(predictions_series, initial_value_test)
+        lower_bounds_reconstructed_armax = reverse_log_returns(lower_bounds_series, initial_value_test)
+        upper_bounds_reconstructed_armax = reverse_log_returns(upper_bounds_series, initial_value_test)
+
+
+        predictions_reconstructed_arma = reverse_log_returns(predictions_series_arma, initial_value_test)
+        lower_bounds_reconstructed_arma = reverse_log_returns(lower_bounds_series_arma, initial_value_test)
+        upper_bounds_reconstructed_arma = reverse_log_returns(upper_bounds_series_arma, initial_value_test)
+
         # Plot actual volume over the full date range
         plt.figure(figsize=(12, 6))
-        plt.plot(log_volume_test.index, log_volume_test, label='Actual Volume', color='blue')
+        plt.plot(actual_reconstructed.index, actual_reconstructed, label='Actual Volume', color='blue')
+        plt.plot(original_volume_series.index, original_volume_series, label = 'Actual Volume 2', color ='black')
 
         # Plot ARMAX predictions
-        plt.plot(predictions_series.index, predictions_series, label='ARMAX Predicted Volume', linestyle='--', color='green')
-        plt.fill_between(predictions_series.index, lower_bounds_series, upper_bounds_series, color='green', alpha=0.2, label='ARMAX 95% Confidence Interval')
+        plt.plot(predictions_reconstructed_armax.index, predictions_reconstructed_armax, label='ARMAX Predicted Volume', linestyle='--', color='green')
+        #plt.fill_between(predictions_reconstructed_armax.index, lower_bounds_series, upper_bounds_series, color='green', alpha=0.2, label='ARMAX 95% Confidence Interval')
 
         # Plot ARMA predictions
-        plt.plot(predictions_series_arma.index, predictions_series_arma, label='ARMA Predicted Volume', linestyle='-.', color='red')
-        plt.fill_between(predictions_series_arma.index, lower_bounds_series_arma, upper_bounds_series_arma, color='red', alpha=0.2, label='ARMA 95% Confidence Interval')
+        plt.plot(predictions_reconstructed_arma.index, predictions_reconstructed_arma, label='ARMA Predicted Volume', linestyle='-.', color='red')
+        #plt.fill_between(predictions_reconstructed_arma.index, lower_bounds_series_arma, upper_bounds_series_arma, color='red', alpha=0.2, label='ARMA 95% Confidence Interval')
         
         plt.legend(loc='lower left', fontsize = '8')
         plt.title(f"Rolling Forecast: ARMAX and ARMA Predictions VS Actual Traded Volume for {symbol}")
