@@ -6,25 +6,6 @@ from statsmodels.tsa.stattools import adfuller
 
 
 
-def detect_and_handle_outliers(series, threshold=3):
-    """
-    Detect and handle outliers in a time series using Z-score method.
-    Points with Z-score greater than the threshold will be considered as outliers.
-    Returns the cleaned series.
-    """
-
-    # Compute Z-scores
-    z_scores = zscore(series)
-
-    # Identify outliers where the Z-score is greater than the threshold
-    outliers = np.abs(z_scores) > threshold
-
-    # Handle outliers (set outliers to NaN, then fill them with linear interpolation)
-    series[outliers] = np.nan
-    series = series.interpolate()  # Interpolate NaN values
-
-    return series
-
 def fetch_stock_data(symbol, start_date, end_date):
     """
     Fetches stock data from Yahoo Finance, log-transforms, and performs ADF test.
@@ -35,23 +16,18 @@ def fetch_stock_data(symbol, start_date, end_date):
     # Select the 'Volume' column as a series
     original_volume_series = stockData['Volume']
 
+    # Now split the aligned data into train/test
+    train_len = int(len(original_volume_series) * 0.8)
+    y_train = original_volume_series.iloc[:train_len]
+
+    initial_volume = original_volume_series[len(y_train)-1]
+
     # Log-transform series
     small_value = 1e-5
     original_volume_series = original_volume_series.replace(0, small_value)
     log_volume_series = np.log10(original_volume_series / original_volume_series.shift(1))
     log_volume_series = log_volume_series.dropna()
-
-    # Detect and handle outliers
-    log_volume_series_cleaned = detect_and_handle_outliers(log_volume_series)
-
-     # Perform ADF test
-    result = adfuller(log_volume_series_cleaned)
-    print(f"p-value: {result[1]}")
-    if result[1] < 0.05:
-        print("The Volume series is stationary (reject the null hypothesis).")
-    else:
-        print("The Volume series is not stationary (fail to reject the null hypothesis).")
     
 
     # Return the cleaned log volume series and the trading dates
-    return original_volume_series, log_volume_series_cleaned, stockData.index, initial_volume
+    return original_volume_series, stockData.index
