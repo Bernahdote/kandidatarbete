@@ -24,27 +24,28 @@ keyword = 'bitcoin'
 folder = './'
 
 # Define the ranges for p, q, and x_order (ALL SHOULD BE 7!)
-p = range(0, 7)  # AR order 
-q = range(0, 7)  # MA order
-x_order_range = range(1, 7)  # Exogenous variable lags
+p = range(0, 2)  # AR order 
+q = range(0, 2)  # MA order
+x_order_range = range(1, 2)  # Exogenous variable lags
 
-def split_data(y, X, train_size=0.8):
-    """Splits y and X into aligned train and test sets over the union of their indexes."""
-    # Align both y and X over the union of their indexes
-    all_index = y.index.union(X.index)
-    y_aligned = y.reindex(all_index)
-    X_aligned = X.reindex(all_index)
+def split_data(target, exog, train_size=0.8):
 
-    # Fill missing values (forward-fill or interpolate)
-    y_aligned = y_aligned.fillna(method='ffill')
-    X_aligned = X_aligned.fillna(method='ffill')
+    # Combine and align indexes
+    combined_index = target.index.union(exog.index)
+    combined_index = combined_index.sort_values()  # Ensure the index is sorted
 
-    # Now split the aligned data into train/test
-    train_len = int(len(y_aligned) * train_size)
-    y_train, y_test = y_aligned.iloc[:train_len], y_aligned.iloc[train_len:]
-    X_train, X_test = X_aligned.iloc[:train_len], X_aligned.iloc[train_len:]
+    target_aligned = target.reindex(combined_index).fillna(method='ffill')
+    exog_aligned = exog.reindex(combined_index).fillna(method='ffill')
 
-    return y_train, y_test, X_train, X_test, train_len
+    # Compute the split point
+    train_len = int(len(target_aligned) * train_size)
+
+    # Split into training and testing sets
+    target_train, target_test = target_aligned.iloc[:train_len], target_aligned.iloc[train_len:]
+    exog_train, exog_test = exog_aligned.iloc[:train_len], exog_aligned.iloc[train_len:]
+
+    return target_train, target_test, exog_train, exog_test, train_len
+
 
 # Fit ARMAX model
 def fit_armax_model(y, X, ar_order, ma_order, x_order):
@@ -153,19 +154,15 @@ if __name__ == '__main__':
 
 # Log-transform volume series
 
-    small_value = 1e-5
-    log_volume = original_volume.replace(0, small_value)
-    log_volume = np.log10(log_volume / log_volume.shift(1))
+    log_volume = np.log10(original_volume /original_volume.shift(1))
     log_volume = log_volume.dropna()
 
-    # Log-transform trend series 
-    log_trends = original_trends.dropna()
-    log_trends = np.log10(log_trends/ log_trends.shift(1))
-    log_trends = log_trends.dropna()
+# Log-transform trend series 
+    log_trends = np.log10(original_trends/original_trends.shift(1))
 
-    # Detect and handle outliers
-    log_volume = detect_and_handle_outliers(log_volume)
-    log_trends = detect_and_handle_outliers(log_trends)
+# Detect and handle outliers
+    #log_volume = detect_and_handle_outliers(log_volume)
+    #log_trends = detect_and_handle_outliers(log_trends)
 
     train_volume, test_volume, train_trends, test_trends, train_len = split_data(log_volume, log_trends)
         
@@ -180,7 +177,7 @@ if __name__ == '__main__':
     pq_combinations = list(itertools.product(p, q))
 
     # Initialize variables to store the best ARMAX model
-    best_armax_aic = np.inf
+    best_armax_aicc = np.inf
     best_armax_order = None
     best_armax_x_lag = None
     best_armax_result = None
@@ -191,9 +188,9 @@ if __name__ == '__main__':
         for x_lag in x_orders:
             current_result, current_exog_cols = fit_armax_model(train_volume, train_trends, ar_order, ma_order, x_lag)
             if current_result is not None:
-                current_aic = current_result.aic
-                if current_aic < best_armax_aic:
-                    best_armax_aic = current_aic
+                current_aicc = current_result.aicc
+                if current_aicc < best_armax_aicc:
+                    best_armax_aicc = current_aicc
                     best_armax_order = (ar_order, ma_order)
                     best_armax_x_lag = x_lag
                     best_armax_result = current_result
@@ -202,7 +199,7 @@ if __name__ == '__main__':
     # Proceed only if we found a suitable ARMAX model
     if best_armax_result is not None:
         ar_order, ma_order = best_armax_order
-        print(f"\nBest ARMAX model found: AR={ar_order}, MA={ma_order}, X_lags={best_armax_x_lag} with AIC={best_armax_aic}")
+        print(f"\nBest ARMAX model found: AR={ar_order}, MA={ma_order}, X_lags={best_armax_x_lag} with AIC={best_armax_aicc}")
         print(best_armax_result.summary())
 
         # Rolling forecast (one-step-ahead) with confidence intervals
@@ -277,13 +274,13 @@ if __name__ == '__main__':
         print("No suitable ARMAX model was found during grid search.")
 
 
-        # ================== ARMA Model ==================
+    # ================== ARMA Model ==================
 
     # Generate all (p, q) combinations
     pq_combinations = list(itertools.product(p, q))
 
     # Initialize variables for the best ARMA model
-    best_arma_aic = np.inf
+    best_arma_aicc = np.inf
     best_arma_order = None
     best_arma_result = None
 
@@ -291,16 +288,16 @@ if __name__ == '__main__':
     for ar_order, ma_order in pq_combinations:
         current_result = fit_arma_model(train_volume, ar_order, ma_order)
         if current_result is not None:
-            current_aic = current_result.aic
-            if current_aic < best_arma_aic:
-                best_arma_aic = current_aic
+            current_aicc = current_result.aicc
+            if current_aicc < best_arma_aicc:
+                best_arma_aicc = current_aicc
                 best_arma_order = (ar_order, ma_order)
                 best_arma_result = current_result
 
     # Proceed only if we found a suitable ARMA model
     if best_arma_result is not None:
         ar_order, ma_order = best_arma_order
-        print(f"\nBest ARMA model found: AR={ar_order}, MA={ma_order} with AIC={best_arma_aic}")
+        print(f"\nBest ARMA model found: AR={ar_order}, MA={ma_order} with AIC={best_arma_aicc}")
         print(best_arma_result.summary())
 
         # Rolling forecast with confidence intervals
@@ -368,8 +365,8 @@ if __name__ == '__main__':
         # Combine training and test data for actual volume (in log returns form)
         actual_volume_full = pd.concat([train_volume, test_volume])
 
-        # Determine the initial volume for reconstructing actual volumes
-        initial_value = original_volume.iloc[train_len]
+        last_train_date = train_volume.index[-1]
+        initial_value = original_volume[train_len]
 
         # Reconstruct actual volumes from log returns
         actual_test_reconstructed = reverse_log_returns(test_volume, initial_value)
@@ -386,10 +383,12 @@ if __name__ == '__main__':
         plt.figure(figsize=(12, 6))
 
         # Plot the reconstructed actual volumes (blue)
-        plt.plot(actual_test_reconstructed.index, actual_test_reconstructed, label='Actual Volume', color='blue')
+        plt.plot(actual_test_reconstructed.index, actual_test_reconstructed, label='Test volume (outliers handled)', color='blue')
 
-        # Plot the original test_volume (log returns) just for reference (black)
-        plt.plot(test_volume.index, test_volume, label='Test Volume (Log Returns)', color='black')
+        actual_volume_test = original_volume[train_len:]
+
+        # Plot the original test_volume (black)
+        plt.plot(actual_volume_test.index, actual_volume_test, label='Test Volume (outliers not handled) ', color='black')
 
         # Plot ARMAX predictions (reconstructed to actual volumes)
         plt.plot(reconstructed_predictions_armax.index, reconstructed_predictions_armax,
@@ -407,5 +406,6 @@ if __name__ == '__main__':
         plt.ylabel('Volume')
         plt.show()
         plt.close()
+
     else:
         print("Could not plot predictions as one or both models were not successfully fitted.")
