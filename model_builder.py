@@ -155,14 +155,13 @@ if __name__ == '__main__':
 # Log-transform volume series
 
     log_volume = np.log10(original_volume /original_volume.shift(1))
-    log_volume = log_volume.dropna()
 
 # Log-transform trend series 
     log_trends = np.log10(original_trends/original_trends.shift(1))
 
 # Detect and handle outliers
-    #log_volume = detect_and_handle_outliers(log_volume)
-    #log_trends = detect_and_handle_outliers(log_trends)
+    log_volume = detect_and_handle_outliers(log_volume)
+    log_trends = detect_and_handle_outliers(log_trends)
 
     train_volume, test_volume, train_trends, test_trends, train_len = split_data(log_volume, log_trends)
         
@@ -366,7 +365,7 @@ if __name__ == '__main__':
         actual_volume_full = pd.concat([train_volume, test_volume])
 
         last_train_date = train_volume.index[-1]
-        initial_value = original_volume[train_len]
+        initial_value = original_volume[last_train_date]
 
         # Reconstruct actual volumes from log returns
         actual_test_reconstructed = reverse_log_returns(test_volume, initial_value)
