@@ -5,6 +5,13 @@ from statsmodels.tsa.stattools import adfuller
 import matplotlib.pyplot as plt
 
 
+def detect_and_handle_outliers(series, method="zscore", threshold=3):
+    if method == "zscore":
+        from scipy.stats import zscore
+        z_scores = zscore(series)
+        abs_z_scores = np.abs(z_scores)
+        filtered_entries = abs_z_scores < threshold
+        return series[filtered_entries]
     
 
 def fetch_google_trends_data(keyword, folder, trading_dates, start_date1, end_date1, start_date2, end_date2, plot=False):
@@ -64,6 +71,7 @@ def fetch_google_trends_data(keyword, folder, trading_dates, start_date1, end_da
     combined_data = combined_data[~combined_data.index.duplicated(keep='first')]
     combined_data.sort_index(inplace=True)
 
+    print(f"Combined data before reindexing: {len(combined_data)} entries")
 
 
     # Ensure trading_dates are in datetime format
@@ -79,6 +87,7 @@ def fetch_google_trends_data(keyword, folder, trading_dates, start_date1, end_da
     # Interpolate missing 'Interest' values
     combined_data['Interest'].interpolate(method='time', inplace=True)
 
+    print(f"Combined data after reindexing: {len(combined_data)} entries")
 
     # Now we can filter to trading_dates if required
     combined_data = combined_data.loc[trading_dates]
@@ -86,7 +95,45 @@ def fetch_google_trends_data(keyword, folder, trading_dates, start_date1, end_da
     # Replace zeros with a small value to avoid log(0)
     small_value = 1e-10
     combined_data['Interest'] = combined_data['Interest'].replace(0, small_value)
-    original_trends = combined_data['Interest']
+
+    # Calculate log returns
+    interest_series = combined_data['Interest']
+    interest_series = interest_series/interest_series.shift(1) 
+    interest_series = interest_series.dropna()
+    log_interest_series = np.log(interest_series / interest_series.shift(1))
+    log_interest_series = log_interest_series.dropna()
+
+    # Detect and handle outliers
+    log_interest_series_clean = detect_and_handle_outliers(log_interest_series, method="zscore", threshold=3)
+    interest_series_clean = detect_and_handle_outliers(interest_series, method="zscore", threshold=3)
+
+    # Perform the ADF test
+    print("Performing ADF test on log-transformed Google Trends series:")
+    result = adfuller(interest_series_clean)
+    print(f"p-value: {result[1]}")
+    if result[1] < 0.05:
+        print("The Google Trends series is stationary (reject the null hypothesis).")
+    else:
+        print("The time series is not stationary (fail to reject the null hypothesis).")
+
+   
+    # Plot the interest series
+    #plt.figure(figsize=(12, 6))
+    #plt.plot(interest_series.index, interest_series)
+    #plt.title(f'Google Trends Data for "{keyword}"')
+    #plt.xlabel('Date')
+    #plt.ylabel('Search Interest')
+    #plt.show()
+    #plt.close()
+
+    # Plot the log-transformed data
+    #plt.figure(figsize=(12, 6))
+    #plt.plot(log_interest_series.index, log_interest_series)
+    #plt.title(f'Log-Transformed Data (Before Outlier Handling)')
+    #plt.xlabel('Date')
+    #plt.ylabel('Log Returns')
+    #plt.show()
+    #plt.close()
 
 
-    return original_trends
+    return interest_series_clean
