@@ -1,4 +1,3 @@
-# Import necessary libraries
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -27,25 +26,26 @@ p = range(0, 7)  # AR order
 q = range(0, 7)  # MA order
 x_order_range = range(1, 7)  # Exogenous variable lags
 
-def split_data(y, X, train_size=0.8):
-    """Splits y and X into aligned train and test sets over the union of their indexes."""
-    # Align both y and X over the union of their indexes
-    all_index = y.index.union(X.index)
-    y_aligned = y.reindex(all_index)
-    X_aligned = X.reindex(all_index)
+def split_data(target, features, train_size=0.8):
+    """Splits target and features into aligned train and test sets over the union of their indexes."""
+    # Align both target and features over the union of their indexes
+    combined_index = target.index.union(features.index)
+    target_aligned = target.reindex(combined_index)
+    features_aligned = features.reindex(combined_index)
 
     # Fill missing values (forward-fill or interpolate)
-    y_aligned = y_aligned.fillna(method='ffill')
-    X_aligned = X_aligned.fillna(method='ffill')
+    target_aligned = target_aligned.fillna(method='ffill')
+    features_aligned = features_aligned.fillna(method='ffill')
 
-    # Now split the aligned data into train/test
-    train_len = int(len(y_aligned) * train_size)
-    y_train, y_test = y_aligned.iloc[:train_len], y_aligned.iloc[train_len:]
-    X_train, X_test = X_aligned.iloc[:train_len], X_aligned.iloc[train_len:]
+    # Calculate the number of training samples
+    train_sample_count = int(len(target_aligned) * train_size)
 
-    return y_train, y_test, X_train, X_test
+    # Split the aligned data into training and testing sets
+    target_train, target_test = target_aligned.iloc[:train_sample_count], target_aligned.iloc[train_sample_count:]
+    features_train, features_test = features_aligned.iloc[:train_sample_count], features_aligned.iloc[train_sample_count:]
 
-# Fit ARMAX model
+    return target_train, target_test, features_train, features_test
+
 def fit_armax_model(y, X, ar_order, ma_order, x_order):
     """Fit ARMAX model using SARIMAX with multiple lags of the exogenous variable."""
     # Create lagged versions of X up to x_order
@@ -72,7 +72,6 @@ def fit_armax_model(y, X, ar_order, ma_order, x_order):
         if num_insignificant > 2:
             return None, None
     except Exception as e:
-        # If the model fails to converge, return None for result
         print(f"Failed to fit model with AR={ar_order}, MA={ma_order}, X_lags={x_order}: {e}")
         result = None
         exog_columns = None
@@ -85,39 +84,9 @@ def prepare_exog_lags(X, x_order):
     X_lags.columns = [f'X_lag_{i}' for i in range(1, x_order + 1)]
     return X_lags
 
-def plot_residuals(residuals, model_name):
-    """Plot residuals, histogram, and Q-Q plot."""
-    residuals = residuals.dropna()
-    fig, ax = plt.subplots(1, 3, figsize=(18, 4))
-
-    # Plot residuals over time
-    ax[0].plot(residuals.index, residuals)
-    ax[0].set_title(f'Residuals Over Time ({model_name})')
-    ax[0].set_xlabel('Date')
-    ax[0].set_ylabel('Residuals')
-
-    # Histogram of residuals
-    ax[1].hist(residuals, bins=20, density=True, alpha=0.6, color='g')
-    mu, std = stats.norm.fit(residuals)
-    xmin, xmax = ax[1].get_xlim()
-    x = np.linspace(xmin, xmax, 100)
-    p = stats.norm.pdf(x, mu, std)
-    ax[1].plot(x, p, 'k', linewidth=2)
-    ax[1].set_title(f'Histogram of Residuals ({model_name})')
-
-    # Q-Q plot
-    sm.qqplot(residuals, line='s', ax=ax[2])
-    ax[2].set_title(f'Q-Q Plot ({model_name})')
-
-    plt.tight_layout()
-    plt.show()
-    plt.close()
-
-# Define fit_arma_model function
 def fit_arma_model(y, ar_order, ma_order):
     """Fit ARMA model using SARIMAX without exogenous variables."""
     y_aligned = y.dropna()
-    # Fit the SARIMAX model with the AR and MA terms
     try:
         model_arma = sm.tsa.SARIMAX(y_aligned, order=(ar_order, 0, ma_order), trend='c')
         result = model_arma.fit(disp=False)
@@ -128,78 +97,69 @@ def fit_arma_model(y, ar_order, ma_order):
         if num_insignificant > 2:
             return None
     except Exception as e:
-        # If the model fails to converge, return None for result
-        result = None
+        print(f"Failed to fit ARMA model with AR={ar_order}, MA={ma_order}: {e}")
+        return None
 
     return result
 
 if __name__ == '__main__':
 
-    # Fetch stock and trends data
+    # ===========================
+    # 1) Fetch stock and trends data
+    # ===========================
+    # log_volume_series: log of trading volume
+    # trading_dates: list or index of trading dates
     log_volume_series, trading_dates = fetch_stock_data(symbol, start_date1, end_date2)
-    log_interest_series = fetch_google_trends_data(keyword, folder, trading_dates, start_date1, end_date1, start_date2, end_date2, plot=True)
+    log_interest_series = fetch_google_trends_data(keyword, folder, trading_dates,
+                                                   start_date1, end_date1, start_date2, end_date2, plot=True)
 
     plt.figure(figsize=(12, 6))
 
-    # First subplot: Log-Transformed Google Trends Data
-    plt.subplot(2, 1, 1)
-    plt.plot(log_interest_series.index, log_interest_series)
-    plt.title(f'Google trends data for search word {keyword}')
-    plt.xlabel('Date')
-    plt.ylabel('Percentual change')
-
-    # Second subplot: Log-Transformed Traded Volume Data
-    plt.subplot(2, 1, 2)
-    plt.plot(log_volume_series.index, log_volume_series, color = 'red')
-    plt.title(f'Log-transformed traded volume data for stock {symbol}')
-    plt.xlabel('Date')
-    plt.ylabel('Log Returns')
-
-    # Show the combined plot
-    plt.tight_layout()
-    plt.show()
-
-    # Split data into training and testing sets
-    log_volume_train, log_volume_test, log_interest_train, log_interest_test = split_data(log_volume_series, log_interest_series, train_size=0.8)
+    # ===========================
+    # 2) Split data (train/test)
+    # ===========================
+    log_volume_train, log_volume_test, log_interest_train, log_interest_test = split_data(
+        log_volume_series, log_interest_series, train_size=0.8
+    )
 
     # Create combinations of p, q, and x_order
     pdq = list(itertools.product(p, q))
     x_orders = list(x_order_range)
 
-    # Initialize variables to store the best model based on AIC
+    # ===========================
+    # 3) Grid Search for ARMAX
+    # ===========================
     best_aic_armax = np.inf
     best_order = None
     best_x_order = None
-    best_result = None
+    best_result_armax = None
     best_exog_columns = None
 
-    # Grid search over p, q, and x_order based on AIC
     for order in pdq:
         for x_order in x_orders:
-            result, exog_columns = fit_armax_model(log_volume_train, log_interest_train, order[0], order[1], x_order)
+            result, exog_columns = fit_armax_model(log_volume_train, log_interest_train,
+                                                   ar_order=order[0], ma_order=order[1], x_order=x_order)
             if result is not None:
                 aic_armax = result.aic
                 if aic_armax < best_aic_armax:
                     best_aic_armax = aic_armax
                     best_order = order
                     best_x_order = x_order
-                    best_result = result
+                    best_result_armax = result
                     best_exog_columns = exog_columns
 
-    # Check if a best model was found
-    if best_result is not None:
-        print(f"\nBest ARMAX model found: AR={best_order[0]}, MA={best_order[1]}, X_lags={best_x_order} with AIC={best_aic_armax}")
-        print(best_result.summary())
-
-
-        # Perform residual analysis
-        residuals = best_result.resid
-        plot_residuals(residuals, "Best ARMAX Model")
+    # ===========================
+    # 4) Evaluate Best ARMAX
+    # ===========================
+    if best_result_armax is not None:
+        print(f"\nBest ARMAX model found: AR={best_order[0]}, MA={best_order[1]}, X_lags={best_x_order} "
+              f"with AIC={best_aic_armax}")
+        print(best_result_armax.summary())
 
         # Rolling forecast with confidence intervals
-        predictions = []
-        lower_bounds = []  # Store lower bounds of confidence intervals
-        upper_bounds = []  # Store upper bounds of confidence intervals
+        predictions_armax = []
+        lower_bounds_armax = []
+        upper_bounds_armax = []
         history_y = log_volume_train.copy()
         history_X = log_interest_train.copy()
         test_index = log_volume_test.index
@@ -214,11 +174,11 @@ if __name__ == '__main__':
             # Align endogenous variable
             y_aligned = history_y.loc[X_lags.index]
 
-            # Re-fit the model on the history data
+            # Re-fit the model on the history data, using the best_result_armax params as starting values
             model = sm.tsa.SARIMAX(y_aligned, exog=X_lags, order=(best_order[0], 0, best_order[1]))
-            result = model.filter(best_result.params)
+            result = model.filter(best_result_armax.params)
 
-            # Prepare exogenous variables for forecasting
+            # Prepare exogenous variables for forecasting (single-step forecast)
             exog_forecast_lags = []
             for lag in range(1, best_x_order + 1):
                 idx = -lag + t + 1
@@ -227,7 +187,8 @@ if __name__ == '__main__':
                 else:
                     exog_value = history_X.iloc[idx]
                 exog_forecast_lags.append(exog_value)
-            exog_forecast_lags = exog_forecast_lags[::-1]  # Reverse to match the lag order
+            # Reverse to match the lag order (if needed)
+            exog_forecast_lags = exog_forecast_lags[::-1]
 
             # Combine with constant term
             exog_forecast_values = [1] + exog_forecast_lags
@@ -237,56 +198,58 @@ if __name__ == '__main__':
             forecast_result = result.get_forecast(steps=1, exog=exog_forecast_df)
             pred_mean = forecast_result.predicted_mean.iloc[0]
             conf_int = forecast_result.conf_int(alpha=0.05)  # 95% confidence interval
-            lower_bound = conf_int.iloc[0, 0]  # Lower bound
-            upper_bound = conf_int.iloc[0, 1]  # Upper bound
+            lower_armax = conf_int.iloc[0, 0]  # Lower bound
+            upper_armax = conf_int.iloc[0, 1]  # Upper bound
 
-            predictions.append(pred_mean)
-            lower_bounds.append(lower_bound)
-            upper_bounds.append(upper_bound)
+            predictions_armax.append(pred_mean)
+            lower_bounds_armax.append(lower_armax)
+            upper_bounds_armax.append(upper_armax)
 
             # Update history with the new observation
             history_y = pd.concat([history_y, log_volume_test.iloc[t:t+1]])
             history_X = pd.concat([history_X, log_interest_test.iloc[t:t+1]])
 
-        # Convert predictions to series
-        predictions_series = pd.Series(predictions, index=test_index[:len(predictions)])
-        lower_bounds_series = pd.Series(lower_bounds, index=test_index[:len(lower_bounds)])
-        upper_bounds_series = pd.Series(upper_bounds, index=test_index[:len(upper_bounds)])
-        actual_test_aligned = log_volume_test.loc[test_index[:len(predictions)]]
+        # Convert predictions to a Series
+        predictions_armax = pd.Series(predictions_armax, index=test_index[:len(predictions_armax)])
+        lower_armax = pd.Series(lower_bounds_armax, index=test_index[:len(lower_bounds_armax)])
+        upper_armax = pd.Series(upper_bounds_armax, index=test_index[:len(upper_bounds_armax)])
 
-        # Drop any NaNs
-        combined = pd.concat([actual_test_aligned, predictions_series, lower_bounds_series, upper_bounds_series], axis=1).dropna()
-        actual_test_aligned = combined.iloc[:, 0]
-        predictions_series = combined.iloc[:, 1]
-        lower_bounds_series = combined.iloc[:, 2]
-        upper_bounds_series = combined.iloc[:, 3]
+        # Align actual with predictions
+        actual_test_aligned_armax = log_volume_test.loc[test_index[:len(predictions_armax)]]
+        combined_armax = pd.concat([actual_test_aligned_armax, predictions_armax,
+                                    lower_armax, upper_armax], axis=1).dropna()
+        actual_test_aligned_armax = combined_armax.iloc[:, 0]
+        predictions_armax = combined_armax.iloc[:, 1]
+        lower_armax = combined_armax.iloc[:, 2]
+        upper_armax = combined_armax.iloc[:, 3]
 
+        # ===========================
+        # 4a) Rise/Fall accuracy (LOG scale)
+        # ===========================
+        actual_changes_armax = actual_test_aligned_armax.diff().dropna()
+        predicted_changes_armax = predictions_armax.diff().dropna()
 
-        # Calculate correct rise/fall predictions
-        actual_changes = actual_test_aligned.diff().dropna()
-        predicted_changes = predictions_series.diff().dropna()
+        correct_predictions_armax = (np.sign(actual_changes_armax) == np.sign(predicted_changes_armax)).sum()
+        total_predictions_armax = len(predicted_changes_armax)
+        accuracy_log_armax = correct_predictions_armax / total_predictions_armax * 100
 
-        correct_predictions_armax = (np.sign(actual_changes) == np.sign(predicted_changes)).sum()
-        total_predictions_armax = len(predicted_changes)
-        accuracy = correct_predictions_armax / total_predictions_armax * 100
+        print(f"Correct Rise/Fall Predictions (log scale) for ARMAX: {correct_predictions_armax}/{total_predictions_armax}")
+        print(f"Accuracy (log scale) for ARMAX: {accuracy_log_armax:.2f}%")
 
-        print(f"Correct Rise/Fall Predictions for ARMAX model: {correct_predictions_armax}/{total_predictions_armax}")
-        print(f"Accuracy of predicting rise/fall for ARMAX model: {accuracy:.2f}%")
     else:
         print("No suitable ARMAX model was found during grid search.")
+        predictions_armax = None
+        actual_test_aligned_armax = None
+        lower_armax = None
+        upper_armax = None
 
-    # ================== ARMA Model ==================
-
-    # Fit ARMA model
-    # Create combinations of p and q
-    pdq = list(itertools.product(p, q))
-
-    # Initialize variables to store the best ARMA model based on AIC
+    # ===========================
+    # 5) Grid Search for ARMA
+    # ===========================
     best_aic_arma = np.inf
     best_order_arma = None
     best_result_arma = None
 
-    # Grid search over p and q for ARMA model based on AIC
     for order in pdq:
         result_arma = fit_arma_model(log_volume_train, order[0], order[1])
         if result_arma is not None:
@@ -296,104 +259,132 @@ if __name__ == '__main__':
                 best_order_arma = order
                 best_result_arma = result_arma
 
-    # Check if a best ARMA model was found
+    # ===========================
+    # 6) Evaluate Best ARMA
+    # ===========================
     if best_result_arma is not None:
         print(f"\nBest ARMA model found: AR={best_order_arma[0]}, MA={best_order_arma[1]} with AIC={best_aic_arma}")
         print(best_result_arma.summary())
 
-
-        # Perform residual analysis
-        residuals_arma = best_result_arma.resid
-
-        # Rolling forecast with confidence intervals for ARMA model
+        # Rolling forecast with confidence intervals for ARMA
         predictions_arma = []
-        lower_bounds_arma = []  # Store lower bounds of confidence intervals
-        upper_bounds_arma = []  # Store upper bounds of confidence intervals
+        lower_bounds_arma = []
+        upper_bounds_arma = []
         history_y_arma = log_volume_train.copy()
         test_index_arma = log_volume_test.index
 
         for t in range(len(log_volume_test)):
-            # Fit the model on the history data
+            # Fit the model on the history data, reusing best_result_arma params
             y_aligned_arma = history_y_arma.dropna()
             model_arma = sm.tsa.SARIMAX(y_aligned_arma, order=(best_order_arma[0], 0, best_order_arma[1]), trend='c')
             result_arma = model_arma.filter(best_result_arma.params)
 
-            # Forecast one step ahead, including confidence intervals
+            # Forecast one step ahead
             forecast_result_arma = result_arma.get_forecast(steps=1)
             pred_mean_arma = forecast_result_arma.predicted_mean.iloc[0]
-            conf_int_arma = forecast_result_arma.conf_int(alpha=0.05)  # 95% confidence interval
-            lower_bound_arma = conf_int_arma.iloc[0, 0]  # Lower bound
-            upper_bound_arma = conf_int_arma.iloc[0, 1]  # Upper bound
+            conf_int_arma = forecast_result_arma.conf_int(alpha=0.05)
+            lower_bound_arma = conf_int_arma.iloc[0, 0]
+            upper_bound_arma = conf_int_arma.iloc[0, 1]
 
             predictions_arma.append(pred_mean_arma)
             lower_bounds_arma.append(lower_bound_arma)
             upper_bounds_arma.append(upper_bound_arma)
 
-            # Update history with the new observation
+            # Update history
             history_y_arma = pd.concat([history_y_arma, log_volume_test.iloc[t:t+1]])
 
-        # Convert predictions to series
-        predictions_series_arma = pd.Series(predictions_arma, index=test_index_arma[:len(predictions_arma)])
-        lower_bounds_series_arma = pd.Series(lower_bounds_arma, index=test_index_arma[:len(lower_bounds_arma)])
-        upper_bounds_series_arma = pd.Series(upper_bounds_arma, index=test_index_arma[:len(upper_bounds_arma)])
+        # Convert to Series
+        predictions_arma = pd.Series(predictions_arma, index=test_index_arma[:len(predictions_arma)])
+        lower_arma = pd.Series(lower_bounds_arma, index=test_index_arma[:len(lower_bounds_arma)])
+        upper_arma = pd.Series(upper_bounds_arma, index=test_index_arma[:len(upper_bounds_arma)])
+
+        # Align actual with predictions
         actual_test_aligned_arma = log_volume_test.loc[test_index_arma[:len(predictions_arma)]]
-
-        # Drop any NaNs
-        combined_arma = pd.concat([actual_test_aligned_arma, predictions_series_arma, lower_bounds_series_arma, upper_bounds_series_arma], axis=1).dropna()
+        combined_arma = pd.concat([actual_test_aligned_arma, predictions_arma,
+                                   lower_arma, upper_arma], axis=1).dropna()
         actual_test_aligned_arma = combined_arma.iloc[:, 0]
-        predictions_series_arma = combined_arma.iloc[:, 1]
-        lower_bounds_series_arma = combined_arma.iloc[:, 2]
-        upper_bounds_series_arma = combined_arma.iloc[:, 3]
+        predictions_arma = combined_arma.iloc[:, 1]
+        lower_arma = combined_arma.iloc[:, 2]
+        upper_arma = combined_arma.iloc[:, 3]
 
-        # Calculate RMSE on test data
-        rmse_arma_test = mean_squared_error(actual_test_aligned_arma, predictions_series_arma, squared=False)
-        rmse_armax_test = mean_squared_error(actual_test_aligned, predictions_series, squared=False)
-
-        print(f"Root Mean Squared Error (RMSE) on the test set for ARMAX model: {rmse_armax_test}")
-        print(f"Root Mean Squared Error (RMSE) on the test set for ARMA model: {rmse_arma_test}")
-
-        print(f"The ARMAX model is {rmse_arma_test/rmse_armax_test} times better than the ARMA model based on RMSE")
-
-        # Calculate correct rise/fall predictions
+        # ===========================
+        # 6a) Rise/Fall accuracy (LOG scale)
+        # ===========================
         actual_changes_arma = actual_test_aligned_arma.diff().dropna()
-        predicted_changes_arma = predictions_series_arma.diff().dropna()
-
+        predicted_changes_arma = predictions_arma.diff().dropna()
         correct_predictions_arma = (np.sign(actual_changes_arma) == np.sign(predicted_changes_arma)).sum()
         total_predictions_arma = len(predicted_changes_arma)
-        accuracy_arma = correct_predictions_arma / total_predictions_arma * 100
+        accuracy_log_arma = correct_predictions_arma / total_predictions_arma * 100
 
-        print(f"Correct Rise/Fall Predictions for ARMA model: {correct_predictions_arma}/{total_predictions_arma}")
-        print(f"Accuracy of predicting rise/fall for ARMA model: {accuracy_arma:.2f}%")
+        print(f"Correct Rise/Fall Predictions (log scale) for ARMA: {correct_predictions_arma}/{total_predictions_arma}")
+        print(f"Accuracy (log scale) for ARMA: {accuracy_log_arma:.2f}%")
+
     else:
         print("No suitable ARMA model was found during grid search.")
+        predictions_arma = None
+        actual_test_aligned_arma = None
+        lower_arma = None
+        upper_arma = None
 
-    # Combined Plotting Section
-    if best_result is not None and best_result_arma is not None:
-        # Combine training and test data for actual volume
-        actual_volume_full = pd.concat([log_volume_train, log_volume_test])
-        
-        volume_val = np.exp(log_volume_test); 
-        predictions_val = np.exp(predictions_series);
-        predictions_val_arma = np.exp(predictions_series_arma); 
+    # ===========================
+    # 7) RMSE Comparison in LOG scale (Optional)
+    # ===========================
+    if (best_result_armax is not None) and (best_result_arma is not None):
+        rmse_armax_log = mean_squared_error(actual_test_aligned_armax, predictions_armax, squared=False)
+        rmse_arma_log = mean_squared_error(actual_test_aligned_arma, predictions_arma, squared=False)
 
-
-        # Plot actual volume over the full date range
-        plt.figure(figsize=(12, 6))
-        plt.plot(volume_val.index, volume_val, label='Actual Volume', color='blue')
-
-        # Plot ARMAX predictions
-        plt.plot(predictions_val.index, predictions_val, label='ARMAX Predicted Volume', linestyle='--', color='green')
-        #plt.fill_between(predictions_series.index, lower_bounds_series, upper_bounds_series, color='green', alpha=0.2, label='ARMAX 95% Confidence Interval')
-
-        # Plot ARMA predictions
-        plt.plot(predictions_val_arma.index, predictions_val_arma, label='ARMA Predicted Volume', linestyle='-.', color='red')
-        #plt.fill_between(predictions_series_arma.index, lower_bounds_series_arma, upper_bounds_series_arma, color='red', alpha=0.2, label='ARMA 95% Confidence Interval')
-        
-        plt.legend(loc='lower left', fontsize = '8')
-        plt.title(f"Rolling Forecast: ARMAX and ARMA Predictions VS Actual Traded Volume for {symbol}")
-        plt.xlabel('Date')
-        plt.ylabel('Volume')
-        plt.show()
-        plt.close()
+        print(f"\nRMSE (log scale) ARMAX: {rmse_armax_log}")
+        print(f"RMSE (log scale) ARMA:  {rmse_arma_log}")
+        ratio = (rmse_arma_log / rmse_armax_log) if rmse_armax_log != 0 else np.inf
+        print(f"The ARMAX model is {ratio:.2f} times better than the ARMA model (log-scale RMSE)")
     else:
-        print("Could not plot predictions as one or both models were not successfully fitted.")
+        print("Cannot compare RMSE in log scale since at least one model was not fitted.")
+
+    # ===========================
+    # 8) Exponentiate for Real-Scale RMSE & Accuracy
+    # ===========================
+    if (best_result_armax is not None) and (best_result_arma is not None):
+
+        # ----- ARMAX -----
+        actual_armax_exp = np.exp(actual_test_aligned_armax)
+        pred_armax_exp   = np.exp(predictions_armax)
+        lower_armax_exp  = np.exp(lower_armax)
+        upper_armax_exp  = np.exp(upper_armax)
+
+        # ----- ARMA -----
+        actual_arma_exp = np.exp(actual_test_aligned_arma)
+        pred_arma_exp   = np.exp(predictions_arma)
+        lower_arma_exp  = np.exp(lower_arma)
+        upper_arma_exp  = np.exp(upper_arma)
+
+        # -- Real-scale RMSE --
+        rmse_armax_real = mean_squared_error(actual_armax_exp, pred_armax_exp, squared=False)
+        rmse_arma_real  = mean_squared_error(actual_arma_exp,  pred_arma_exp,  squared=False)
+        print(f"\nRMSE (real scale) for ARMAX: {rmse_armax_real:.4f}")
+        print(f"RMSE (real scale) for ARMA:  {rmse_arma_real:.4f}")
+        
+        # -- Real-scale Rise/Fall Accuracy --
+
+        # ARMAX
+        actual_armax_diff = actual_armax_exp.diff().dropna()
+        pred_armax_diff   = pred_armax_exp.diff().dropna()
+        # Align if needed
+        combined_armax_diff = pd.concat([actual_armax_diff, pred_armax_diff], axis=1).dropna()
+        combined_armax_diff.columns = ['actual_diff_armax', 'pred_diff_armax']
+        correct_armax = (np.sign(combined_armax_diff['actual_diff_armax']) ==
+                         np.sign(combined_armax_diff['pred_diff_armax'])).sum()
+        total_armax = len(combined_armax_diff)
+        armax_accuracy_real = correct_armax / total_armax * 100
+
+        print(f"\nARMAX Rise/Fall Accuracy (real scale): {armax_accuracy_real:.2f}% "
+              f"({correct_armax}/{total_armax})")
+
+        # ARMA
+        actual_arma_diff = actual_arma_exp.diff().dropna()
+        pred_arma_diff   = pred_arma_exp.diff().dropna()
+        combined_arma_diff = pd.concat([actual_arma_diff, pred_arma_diff], axis=1).dropna()
+        combined_arma_diff.columns = ['actual_diff_arma', 'pred_diff_arma']
+        correct_arma = (np.sign(combined_arma_diff['actual_diff_arma']) ==
+                        np.sign(combined_arma_diff['pred_diff_arma'])).sum()
+        total_arma = len(combined_arma_diff)
+        a
