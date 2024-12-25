@@ -129,7 +129,7 @@ if __name__ == '__main__':
     # ===========================
     # 3) Grid Search for ARMAX
     # ===========================
-    best_aic_armax = np.inf
+    best_aicc_armax = np.inf
     best_order = None
     best_x_order = None
     best_result_armax = None
@@ -140,9 +140,9 @@ if __name__ == '__main__':
             result, exog_columns = fit_armax_model(log_volume_train, log_interest_train,
                                                    ar_order=order[0], ma_order=order[1], x_order=x_order)
             if result is not None:
-                aic_armax = result.aic
-                if aic_armax < best_aic_armax:
-                    best_aic_armax = aic_armax
+                aicc_armax = result.aicc
+                if aicc_armax < best_aicc_armax:
+                    best_aicc_armax = aicc_armax
                     best_order = order
                     best_x_order = x_order
                     best_result_armax = result
@@ -153,7 +153,7 @@ if __name__ == '__main__':
     # ===========================
     if best_result_armax is not None:
         print(f"\nBest ARMAX model found: AR={best_order[0]}, MA={best_order[1]}, X_lags={best_x_order} "
-              f"with AIC={best_aic_armax}")
+              f"with AICc={best_aicc_armax}")
         print(best_result_armax.summary())
 
         # Rolling forecast with confidence intervals
@@ -246,16 +246,16 @@ if __name__ == '__main__':
     # ===========================
     # 5) Grid Search for ARMA
     # ===========================
-    best_aic_arma = np.inf
+    best_aicc_arma = np.inf
     best_order_arma = None
     best_result_arma = None
 
     for order in pdq:
         result_arma = fit_arma_model(log_volume_train, order[0], order[1])
         if result_arma is not None:
-            aic_arma = result_arma.aic
-            if aic_arma < best_aic_arma:
-                best_aic_arma = aic_arma
+            aicc_arma = result_arma.aicc
+            if aicc_arma < best_aicc_arma:
+                best_aicc_arma = aicc_arma
                 best_order_arma = order
                 best_result_arma = result_arma
 
@@ -263,7 +263,7 @@ if __name__ == '__main__':
     # 6) Evaluate Best ARMA
     # ===========================
     if best_result_arma is not None:
-        print(f"\nBest ARMA model found: AR={best_order_arma[0]}, MA={best_order_arma[1]} with AIC={best_aic_arma}")
+        print(f"\nBest ARMA model found: AR={best_order_arma[0]}, MA={best_order_arma[1]} with AICc={best_aicc_arma}")
         print(best_result_arma.summary())
 
         # Rolling forecast with confidence intervals for ARMA
@@ -387,4 +387,89 @@ if __name__ == '__main__':
         correct_arma = (np.sign(combined_arma_diff['actual_diff_arma']) ==
                         np.sign(combined_arma_diff['pred_diff_arma'])).sum()
         total_arma = len(combined_arma_diff)
-        a
+
+        # Plot actual volume over the full date range
+        plt.figure(figsize=(12, 6))
+        plt.plot(log_volume_test.index, np.exp(log_volume_test), label='Actual Volume', color='blue')
+
+        # Plot ARMAX predictions
+        plt.plot(pred_armax_exp.index, pred_armax_exp, label='ARMAX Predicted Volume', linestyle='--', color='green')
+        plt.fill_between(pred_armax_exp.index, lower_armax_exp, upper_armax_exp, color='green', alpha=0.2, label='ARMAX 95% Confidence Interval')
+
+        # Plot ARMA predictions
+        plt.plot(pred_arma_exp.index, pred_arma_exp, label='ARMA Predicted Volume', linestyle='-.', color='red')
+        plt.fill_between(pred_arma_exp.index, lower_arma_exp, upper_arma_exp, color='red', alpha=0.2, label='ARMA 95% Confidence Interval')
+
+        plt.legend(loc='lower left', fontsize = '8')
+        plt.title(f"Rolling Forecast: ARMAX and ARMA Predictions VS Actual Traded Volume for {symbol}")
+        plt.xlabel('Date')
+        plt.ylabel('Volume')
+        plt.show()
+        plt.close()
+        
+
+        def rmse_ci(actual: pd.Series, predicted: pd.Series, n_bootstraps=1000, alpha=0.05):
+            """Bootstrap the RMSE and return the lower and upper confidence limits."""
+            np.random.seed(42)
+            # Align Series and drop missing
+            combined = pd.concat([actual, predicted], axis=1).dropna()
+            y_true = combined.iloc[:, 0].values
+            y_pred = combined.iloc[:, 1].values
+            n = len(combined)
+    
+            metric_values = []
+            for _ in range(n_bootstraps):
+                indices = np.random.randint(0, n, n)  # sample with replacement
+                metric_values.append(np.sqrt(np.mean((y_true[indices] - y_pred[indices])**2)))
+        
+                lower = np.percentile(metric_values, alpha/2 * 100)
+                upper = np.percentile(metric_values, (1 - alpha/2) * 100)
+            return lower, upper
+
+
+def sign_accuracy_ci(actual: pd.Series, predicted: pd.Series, n_bootstraps=1000, alpha=0.05):
+    """
+    Bootstrap the sign accuracy (rise/fall) and return the lower/upper confidence bounds.
+    We'll consider sign(actual_t - actual_(t-1)) == sign(pred_t - pred_(t-1)).
+    """
+    np.random.seed(42)
+    # Compute daily (or step) differences, drop missing
+    actual_diff = actual.diff().dropna()
+    pred_diff = predicted.diff().dropna()
+    combined = pd.concat([actual_diff, pred_diff], axis=1).dropna()
+    
+    # 1 if sign is correct, 0 otherwise
+    correctness = (np.sign(combined.iloc[:, 0]) == np.sign(combined.iloc[:, 1])).astype(int)
+    n = len(correctness)
+    
+    metric_values = []
+    for _ in range(n_bootstraps):
+        indices = np.random.randint(0, n, n)
+        metric_values.append(np.mean(correctness.iloc[indices]))
+    
+    # Convert mean correctness to percentage
+    lower = np.percentile(metric_values, alpha/2 * 100) * 100
+    upper = np.percentile(metric_values, (1 - alpha/2) * 100) * 100
+    return lower, upper
+
+# ================================
+# Example usage after your final evaluation:
+# ================================
+
+# Suppose you already have these computed:
+# actual_test_aligned_armax, predictions_armax
+# actual_test_aligned_arma, predictions_arma
+
+if (best_result_armax is not None) and (predictions_armax is not None):
+    rmse_lower, rmse_upper = rmse_ci(actual_test_aligned_armax, predictions_armax)
+    print(f"95% CI for ARMAX RMSE (log scale): [{rmse_lower:.4f}, {rmse_upper:.4f}]")
+
+    sa_lower, sa_upper = sign_accuracy_ci(actual_test_aligned_armax, predictions_armax)
+    print(f"95% CI for ARMAX Rise/Fall accuracy (log scale): [{sa_lower:.2f}%, {sa_upper:.2f}%]")
+
+if (best_result_arma is not None) and (predictions_arma is not None):
+    rmse_lower, rmse_upper = rmse_ci(actual_test_aligned_arma, predictions_arma)
+    print(f"95% CI for ARMA RMSE (log scale): [{rmse_lower:.4f}, {rmse_upper:.4f}]")
+
+    sa_lower, sa_upper = sign_accuracy_ci(actual_test_aligned_arma, predictions_arma)
+    print(f"95% CI for ARMA Rise/Fall accuracy (log scale): [{sa_lower:.2f}%, {sa_upper:.2f}%]")
