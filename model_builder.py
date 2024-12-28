@@ -12,13 +12,13 @@ from scipy import stats
 
 warnings.filterwarnings("ignore")
 
-symbol = 'BTC-USD'
+symbol = 'VET-USD'
 start_date1 = '2023-03-23'
 end_date1 = '2023-11-23'
 start_date2 = '2023-11-17'
 end_date2 = '2024-07-17'
 
-keyword = 'bitcoin'
+keyword = 'vechain'
 folder = './'
 
 # Define the ranges for p, q, and x_order
