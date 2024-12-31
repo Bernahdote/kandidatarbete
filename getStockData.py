@@ -1,6 +1,7 @@
 import yfinance as yf
 import matplotlib.pyplot as plt
 import numpy as np
+from statsmodels.tsa.stattools import adfuller
 from scipy.stats import zscore
 
 
@@ -40,7 +41,15 @@ def fetch_stock_data(symbol, start_date, end_date):
     log_volume_series = log_volume_series.dropna()
 
     # Detect and handle outliers
-    log_volume_series_cleaned = detect_and_handle_outliers(log_volume_series)
+    log_volume_series_clean = detect_and_handle_outliers(log_volume_series)
+
+    print("Performing ADF test on log-transformed Google Trends series:")
+    result = adfuller(log_volume_series_clean)
+    print(f"p-value: {result[1]}")
+    if result[1] < 0.05:
+        print("The Volume series is stationary (reject the null hypothesis).")
+    else:
+        print("The Volume series is not stationary (fail to reject the null hypothesis).")
 
     # Return the cleaned log volume series and the trading dates
-    return log_volume_series_cleaned, stockData.index
+    return log_volume_series_clean, stockData.index
