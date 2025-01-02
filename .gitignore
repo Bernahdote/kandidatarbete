@@ -1,0 +1,5 @@
+#Random cache
+.__pycache__
+
+# Mac finder BS
+.DS_Store
