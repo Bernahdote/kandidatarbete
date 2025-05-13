@@ -72,6 +72,7 @@ def fetch_google_trends_data(keyword, folder, trading_dates, start_date1, end_da
     combined_data.sort_index(inplace=True)
 
     print(f"Combined data before reindexing: {len(combined_data)} entries")
+    print(f"Hej hej")
 
 
     # Ensure trading_dates are in datetime format
